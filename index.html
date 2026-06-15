@@ -328,17 +328,11 @@ function notifEl(o){
 let feedTimer=null;
 function startFeed(orders){
   const list=$('notif-list'); if(!list)return;
-  if(feedTimer) clearInterval(feedTimer);
+  if(feedTimer){ clearInterval(feedTimer); feedTimer=null; }
   list.innerHTML='';
-  const MAX=4, feed=(orders||[]).slice();
-  for(let i=0;i<Math.min(MAX,feed.length);i++) list.appendChild(notifEl(feed[i]));
-  let idx=feed.length?MAX%feed.length:0;
-  feedTimer=setInterval(()=>{
-    if(!feed.length)return;
-    list.insertBefore(notifEl(feed[idx]),list.firstChild);
-    idx=(idx+1)%feed.length;
-    while(list.children.length>MAX){ const last=list.lastElementChild; last.style.transition='opacity .4s,transform .4s'; last.style.opacity='0'; last.style.transform='translateY(10px)'; setTimeout(()=>last.remove(),380); }
-  },5000);
+  // STATIC: show the 4 most recent orders, refreshed with the data each render (~2 min).
+  // No 5s cycling — that continuously re-composited the scaled canvas and slowed phones/weak PCs.
+  (orders||[]).slice(0,4).forEach(o => list.appendChild(notifEl(o)));
 }
 
 /* ===== render everything from window.SEED ===== */
@@ -368,7 +362,7 @@ function render(){
 }
 
 /* ===== relative-time refresh (footer time is set from S.asOf inside render) ===== */
-setInterval(()=>{ document.querySelectorAll('#notif-list .time .rel').forEach(r=>{ const at=r.parentElement.dataset.at; if(at) r.textContent=ago(at); }); },30000);
+setInterval(()=>{ document.querySelectorAll('#notif-list .time .rel').forEach(r=>{ const at=r.parentElement.dataset.at; if(at) r.textContent=ago(at); }); },60000);
 
 /* ===== load seed (cache-busted) + re-pull every 2 min to pick up the 15-min refresh ===== */
 function loadSeed(){
