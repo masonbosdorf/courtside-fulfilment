@@ -41,6 +41,31 @@ body{
 #stage{position:fixed;top:0;left:0;width:1920px;height:1080px;container-type:size;display:flex;flex-direction:column;transform-origin:top left;overflow:hidden;will-change:transform;}
 .display{font-family:"Archivo Black",sans-serif;letter-spacing:-0.02em;}
 
+/* ===== sliding view rotation (kiosk) — footer stays fixed below ===== */
+.views{flex:1;min-height:0;position:relative;overflow:hidden;}
+.track{display:flex;width:200%;height:100%;transform:translateX(0);transition:transform 0.75s cubic-bezier(0.7,0,0.2,1);will-change:transform;}
+.view{flex:0 0 50%;width:50%;height:100%;min-width:0;display:flex;flex-direction:column;}
+
+/* ===== screen 2 — unfulfilled orders by date (large text, no chart) ===== */
+.view-dates{padding:clamp(16px,1.8cqw,34px) clamp(20px,2.4cqw,46px) clamp(10px,1cqw,18px);}
+.dates-head{flex:0 0 auto;border-bottom:1px solid var(--line);padding-bottom:clamp(8px,1cqh,16px);margin-bottom:clamp(6px,0.9cqh,14px);position:relative;}
+.dates-head h1{font-family:"Archivo Black",sans-serif;font-size:clamp(28px,3.3cqw,60px);letter-spacing:-0.02em;line-height:0.95;}
+.dates-sub{font-size:clamp(9px,0.78cqw,13px);letter-spacing:0.18em;text-transform:uppercase;color:var(--faint);margin-top:clamp(5px,0.7cqh,10px);}
+.dates-total{position:absolute;right:0;bottom:clamp(8px,1cqh,16px);display:flex;align-items:baseline;gap:clamp(8px,0.9cqw,16px);}
+.dates-total #ud-total{font-family:"Archivo Black",sans-serif;font-size:clamp(30px,3.4cqw,60px);letter-spacing:-0.03em;line-height:0.9;}
+.dates-total-lbl{font-size:clamp(9px,0.74cqw,13px);letter-spacing:0.16em;text-transform:uppercase;color:var(--faint);max-width:14ch;text-align:right;}
+.dates-list{flex:1;min-height:0;display:flex;flex-direction:column;}
+.date-row{flex:1;min-height:0;display:flex;align-items:center;justify-content:space-between;gap:clamp(16px,2cqw,40px);border-bottom:1px solid rgba(255,255,255,0.055);}
+.date-row:last-child{border-bottom:none;}
+.date-left{flex:1;min-width:0;display:flex;align-items:baseline;gap:clamp(8px,1cqw,18px);}
+.date-lbl{font-family:"Archivo Black",sans-serif;font-size:clamp(22px,2.95cqw,54px);letter-spacing:-0.02em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.date-row.stale .date-lbl{color:#fff;}
+.date-n{flex:0 0 auto;display:flex;align-items:baseline;gap:clamp(6px,0.7cqw,13px);}
+.date-num{font-family:"Archivo Black",sans-serif;font-size:clamp(30px,4.3cqw,80px);letter-spacing:-0.03em;line-height:0.85;font-variant-numeric:tabular-nums;}
+.date-orders{font-size:clamp(10px,0.95cqw,17px);letter-spacing:0.13em;text-transform:uppercase;color:var(--muted);}
+.date-units{font-size:clamp(10px,0.82cqw,15px);color:var(--faint);font-family:"Archivo Black",sans-serif;font-weight:400;margin-left:clamp(4px,0.5cqw,9px);}
+.date-age{font-size:clamp(9px,0.72cqw,13px);letter-spacing:0.1em;text-transform:uppercase;color:var(--bad);margin-left:clamp(8px,0.9cqw,16px);opacity:0.85;}
+
 /* ===== layout ===== */
 .dash{
   flex:1;min-height:0;
@@ -182,6 +207,9 @@ body{
 <body>
 <div id="stage">
 
+<div class="views"><div class="track" id="track">
+<section class="view">
+
 <div class="dash">
 
   <!-- ===== LEFT TOP — TODAY ===== -->
@@ -290,6 +318,18 @@ body{
   </div>
 
 </div>
+</section>
+
+<!-- ===== SCREEN 2 — UNFULFILLED ORDERS BY DATE ===== -->
+<section class="view view-dates">
+  <div class="dates-head">
+    <h1>Unfulfilled Orders</h1>
+    <div class="dates-sub">by order date · oldest first</div>
+    <div class="dates-total"><span id="ud-total">—</span><span class="dates-total-lbl">orders awaiting fulfilment · shipping</span></div>
+  </div>
+  <div class="dates-list" id="dates-list"></div>
+</section>
+</div></div>
 
 <!-- ===== FOOTER ===== -->
 <footer class="foot">
@@ -396,7 +436,37 @@ function render(){
   $('month-name').textContent=mel({month:'long',year:'numeric'});
   { const a=$('asof'); if(a&&S.asOf) a.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(S.asOf)); }
   updateGoal(S.today.fulfilled);
+  renderDates();
 }
+
+/* ===== screen 2 — unfulfilled orders grouped by order date (oldest first) ===== */
+function daysAgo(ymd){ // ymd = 'YYYY-MM-DD' (Melbourne); whole days between then and today
+  const todayKey=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Melbourne',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const a=Date.parse(ymd+'T00:00:00Z'), b=Date.parse(todayKey+'T00:00:00Z');
+  return (isNaN(a)||isNaN(b))?0:Math.round((b-a)/86400000);
+}
+function renderDates(){
+  const S=window.SEED; const list=$('dates-list'); if(!list)return;
+  const data=(S&&S.unfulfilledByDate)||[];
+  const tot=$('ud-total'); if(tot) tot.textContent=fmt(data.reduce((a,r)=>a+(r.orders||0),0));
+  list.innerHTML='';
+  if(!data.length){ list.innerHTML='<div class="hbar-empty">No unfulfilled orders</div>'; return; }
+  for(const r of data){
+    const row=document.createElement('div'); row.className='date-row';
+    const d=daysAgo(r.key);
+    if(d>=7) row.classList.add('stale');
+    const age=d>=7?'<span class="date-age">'+d+'d old</span>':'';
+    const units=r.units!=null?'<span class="date-units">'+fmt(r.units)+' units</span>':'';
+    row.innerHTML='<div class="date-left"><span class="date-lbl">'+r.label+'</span>'+age+'</div>'+
+      '<div class="date-n"><span class="date-num">'+fmt(r.orders)+'</span><span class="date-orders">orders</span>'+units+'</div>';
+    list.appendChild(row);
+  }
+}
+
+/* ===== kiosk rotation — slide between screens every 15s ===== */
+const ROTATE_MS=15000; let viewIdx=0; const VIEW_COUNT=2;
+function showView(i){ viewIdx=((i%VIEW_COUNT)+VIEW_COUNT)%VIEW_COUNT; const t=$('track'); if(t) t.style.transform='translateX(-'+(viewIdx*50)+'%)'; }
+setInterval(()=>showView(viewIdx+1), ROTATE_MS);
 
 /* ===== fulfilment goal ring (today vs 125) ===== */
 const GOAL_TARGET=125, RING_R=52, RING_C=2*Math.PI*RING_R;   // circumference ≈ 326.7
