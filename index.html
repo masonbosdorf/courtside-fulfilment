@@ -53,11 +53,11 @@ body{
 .view-dates{padding:clamp(16px,1.8cqw,34px) clamp(20px,2.4cqw,46px) clamp(10px,1cqw,18px);}
 .dates-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:clamp(16px,2cqw,40px);border-bottom:1px solid var(--line);padding-bottom:clamp(8px,1cqh,16px);margin-bottom:clamp(6px,0.9cqh,14px);}
 .dates-head-l{min-width:0;}
-.dates-head h1{font-family:"Archivo Black",sans-serif;font-size:clamp(28px,3.3cqw,60px);letter-spacing:-0.02em;line-height:0.95;}
+.dates-head h1{font-family:"Archivo Black",sans-serif;font-size:clamp(22px,2.95cqw,54px);letter-spacing:-0.02em;line-height:1;}
 .dates-sub{font-size:clamp(9px,0.78cqw,13px);letter-spacing:0.18em;text-transform:uppercase;color:var(--faint);margin-top:clamp(5px,0.7cqh,10px);}
 .dates-total{flex:0 0 auto;display:flex;align-items:baseline;gap:clamp(8px,0.9cqw,16px);}
-.dates-total #ud-total{font-family:"Archivo Black",sans-serif;font-size:clamp(30px,3.4cqw,60px);letter-spacing:-0.03em;line-height:0.9;}
-.dates-total-lbl{font-size:clamp(9px,0.74cqw,13px);letter-spacing:0.16em;text-transform:uppercase;color:var(--faint);max-width:14ch;text-align:right;}
+.dates-total #ud-total{font-family:"Archivo Black",sans-serif;font-size:clamp(30px,4.3cqw,80px);letter-spacing:-0.03em;line-height:0.85;}
+.dates-total-lbl{font-size:clamp(10px,0.95cqw,17px);letter-spacing:0.13em;text-transform:uppercase;color:var(--muted);max-width:16ch;text-align:right;}
 .dates-list{flex:1;min-height:0;display:flex;flex-direction:column;}
 .date-row{flex:1;min-height:0;display:flex;align-items:center;justify-content:space-between;gap:clamp(16px,2cqw,40px);border-bottom:1px solid rgba(255,255,255,0.055);}
 .date-row:last-child{border-bottom:none;}
@@ -194,6 +194,9 @@ body{
   font-family:"Archivo Black",sans-serif;letter-spacing:-0.03em;line-height:0.9;}
 .goal-num #goal-done{font-size:clamp(40px,7cqw,96px);}
 .goal-num .goal-tot{font-size:clamp(18px,2.6cqw,38px);color:var(--faint);}
+/* 3-digit total (≥100) — shrink so it fits inside the ring */
+.goal-num.three #goal-done{font-size:clamp(32px,5.2cqw,70px);}
+.goal-num.three .goal-tot{font-size:clamp(15px,2cqw,30px);}
 
 /* ===== footer ===== */
 .foot{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
@@ -494,6 +497,7 @@ const GOAL_TARGET=125, RING_R=52, RING_C=2*Math.PI*RING_R;   // circumference �
 function updateGoal(done){
   done=done||0;
   const n=$('goal-done'); if(n) n.textContent=fmt(done);
+  const box=document.querySelector('.goal-num'); if(box) box.classList.toggle('three', done>=100);
   const arc=$('goal-arc');
   if(arc){ const p=Math.max(0,Math.min(1,done/GOAL_TARGET)); arc.style.strokeDashoffset=(RING_C*(1-p)).toFixed(1); }
 }
