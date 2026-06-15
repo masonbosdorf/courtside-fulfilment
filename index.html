@@ -422,17 +422,23 @@ function startFeed(orders){
 /* ===== render everything from window.SEED ===== */
 function render(){
   const S=window.SEED; if(!S)return;                 // no data yet → keep last good view
+  // Day-rollover guard: if the seed is from a previous Melbourne day (no sync since midnight —
+  // e.g. the laptop slept), the daily "today" metrics are stale. Reset them to 0 on-screen until
+  // a fresh same-day sync arrives. Month / week / backlog are unaffected (not daily-reset metrics).
+  const T0=S.today||{};
+  const stale = S.asOf && melDayKey(new Date(S.asOf)) !== melDayKey(new Date());
+  const T = stale ? {ordersIn:0,fulfilled:0,unitsIn:0,unitsOut:0,deltaIn:0,deltaOut:0,deltaLbl:T0.deltaLbl,pickers:[],packers:[]} : T0;
   renderHBars('wk-pick',null,(S.week&&S.week.pickers)||[]);
   renderHBars('wk-pack',null,(S.week&&S.week.packers)||[]);
-  renderHBars('tp-pick',null,S.today.pickers);
-  renderHBars('tp-pack',null,S.today.packers);
-  $('t-in').textContent=fmt(S.today.ordersIn);
-  $('t-out').textContent=fmt(S.today.fulfilled);
-  setUnits('t-in-u',S.today.unitsIn);
-  setUnits('t-out-u',S.today.unitsOut);
+  renderHBars('tp-pick',null,T.pickers);
+  renderHBars('tp-pack',null,T.packers);
+  $('t-in').textContent=fmt(T.ordersIn);
+  $('t-out').textContent=fmt(T.fulfilled);
+  setUnits('t-in-u',T.unitsIn);
+  setUnits('t-out-u',T.unitsOut);
   setUnits('unf-u',S.unfulfilledUnits);
-  setDelta('t-in-d',S.today.deltaIn,S.today.deltaLbl);
-  setDelta('t-out-d',S.today.deltaOut,S.today.deltaLbl);
+  setDelta('t-in-d',T.deltaIn,T.deltaLbl);
+  setDelta('t-out-d',T.deltaOut,T.deltaLbl);
   const tp=S.month.topPicker, tk=S.month.topPacker;
   $('pick-n').textContent=fmt(tp.orders); $('pick-name').textContent=tp.name;
   $('pack-n').textContent=fmt(tk.orders); $('pack-name').textContent=tk.name;
@@ -445,9 +451,10 @@ function render(){
   $('today-date').textContent=mel({weekday:'short',day:'numeric',month:'short'});
   $('month-name').textContent=mel({month:'long',year:'numeric'});
   { const a=$('asof'); if(a&&S.asOf) a.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(S.asOf)); }
-  updateGoal(S.today.fulfilled);
+  updateGoal(T.fulfilled);
   renderDates();
 }
+function melDayKey(d){ return new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Melbourne',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
 
 /* ===== screen 2 — unfulfilled orders grouped by order date (oldest first) ===== */
 function daysAgo(ymd){ // ymd = 'YYYY-MM-DD' (Melbourne); whole days between then and today
