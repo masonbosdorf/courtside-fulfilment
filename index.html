@@ -48,10 +48,11 @@ body{
 
 /* ===== screen 2 — unfulfilled orders by date (large text, no chart) ===== */
 .view-dates{padding:clamp(16px,1.8cqw,34px) clamp(20px,2.4cqw,46px) clamp(10px,1cqw,18px);}
-.dates-head{flex:0 0 auto;border-bottom:1px solid var(--line);padding-bottom:clamp(8px,1cqh,16px);margin-bottom:clamp(6px,0.9cqh,14px);position:relative;}
+.dates-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:clamp(16px,2cqw,40px);border-bottom:1px solid var(--line);padding-bottom:clamp(8px,1cqh,16px);margin-bottom:clamp(6px,0.9cqh,14px);}
+.dates-head-l{min-width:0;}
 .dates-head h1{font-family:"Archivo Black",sans-serif;font-size:clamp(28px,3.3cqw,60px);letter-spacing:-0.02em;line-height:0.95;}
 .dates-sub{font-size:clamp(9px,0.78cqw,13px);letter-spacing:0.18em;text-transform:uppercase;color:var(--faint);margin-top:clamp(5px,0.7cqh,10px);}
-.dates-total{position:absolute;right:0;bottom:clamp(8px,1cqh,16px);display:flex;align-items:baseline;gap:clamp(8px,0.9cqw,16px);}
+.dates-total{flex:0 0 auto;display:flex;align-items:baseline;gap:clamp(8px,0.9cqw,16px);}
 .dates-total #ud-total{font-family:"Archivo Black",sans-serif;font-size:clamp(30px,3.4cqw,60px);letter-spacing:-0.03em;line-height:0.9;}
 .dates-total-lbl{font-size:clamp(9px,0.74cqw,13px);letter-spacing:0.16em;text-transform:uppercase;color:var(--faint);max-width:14ch;text-align:right;}
 .dates-list{flex:1;min-height:0;display:flex;flex-direction:column;}
@@ -323,8 +324,10 @@ body{
 <!-- ===== SCREEN 2 — UNFULFILLED ORDERS BY DATE ===== -->
 <section class="view view-dates">
   <div class="dates-head">
-    <h1>Unfulfilled Orders</h1>
-    <div class="dates-sub">by order date · oldest first</div>
+    <div class="dates-head-l">
+      <h1>Unfulfilled Orders</h1>
+      <div class="dates-sub">by order date · oldest first</div>
+    </div>
     <div class="dates-total"><span id="ud-total">—</span><span class="dates-total-lbl">orders awaiting fulfilment · shipping</span></div>
   </div>
   <div class="dates-list" id="dates-list"></div>
