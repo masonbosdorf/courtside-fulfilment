@@ -67,6 +67,10 @@ body{
 .stat{display:flex;flex-direction:column;gap:clamp(1px,0.4cqh,5px);}
 .stat .num{font-family:"Archivo Black",sans-serif;font-size:clamp(34px,4.6cqw,82px);line-height:0.92;letter-spacing:-0.03em;}
 .stat .lbl{font-size:clamp(11px,0.95cqw,16px);letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);}
+/* units sub-metric shown beside an order count (dimmer, ~half size) */
+.u-sub{font-family:"Archivo Black",sans-serif;font-weight:400;font-size:0.46em;color:var(--faint);letter-spacing:0;margin-left:0.4em;white-space:nowrap;vertical-align:baseline;}
+/* stacked variant — used where the count is too large to sit inline (e.g. unfulfilled) */
+.u-line{font-family:"Archivo Black",sans-serif;font-weight:400;font-size:clamp(13px,1.5cqw,26px);color:var(--faint);letter-spacing:-0.01em;line-height:1;margin-top:clamp(3px,0.6cqh,8px);}
 .stat .delta{font-size:clamp(11px,0.92cqw,16px);font-weight:600;display:flex;align-items:center;gap:6px;}
 .delta.up{color:var(--up);}
 .delta.down{color:var(--bad);}
@@ -148,6 +152,20 @@ body{
 .notif .r3 b{font-family:"Archivo Black",sans-serif;font-weight:400;letter-spacing:-0.01em;}
 .notif .r3 .units{color:var(--muted);font-weight:400;}
 
+/* ===== fulfilment goal (circular progress) ===== */
+.goal{flex:1;min-height:0;display:flex;flex-direction:column;}
+.goal-ring{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;}
+.goal-ring svg{width:auto;height:clamp(120px,82%,300px);max-width:100%;transform:rotate(-90deg);overflow:visible;}
+.goal-ring .ring-track{fill:none;stroke:rgba(255,255,255,0.09);stroke-width:9;}
+.goal-ring .ring-prog{fill:none;stroke:var(--up);stroke-width:9;stroke-linecap:round;
+  stroke-dasharray:326.7;stroke-dashoffset:326.7;
+  transition:stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1);
+  filter:drop-shadow(0 0 6px rgba(70,224,138,0.45));}
+.goal-num{position:absolute;display:flex;align-items:baseline;gap:0.04em;
+  font-family:"Archivo Black",sans-serif;letter-spacing:-0.03em;line-height:0.9;}
+.goal-num #goal-done{font-size:clamp(40px,7cqw,96px);}
+.goal-num .goal-tot{font-size:clamp(18px,2.6cqw,38px);color:var(--faint);}
+
 /* ===== footer ===== */
 .foot{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
   padding:clamp(8px,0.9cqw,16px) clamp(16px,1.8cqw,32px);border-top:1px solid var(--line);}
@@ -171,13 +189,13 @@ body{
     <div class="ph"><h2>Today</h2><span class="sub" id="today-date">—</span></div>
     <div class="stat-wrap">
       <div class="stat">
-        <div class="num" id="t-in">137</div>
+        <div class="num"><span id="t-in">137</span><span class="u-sub" id="t-in-u"></span></div>
         <div class="lbl">Orders in</div>
         <div class="delta up" id="t-in-d"><span>▲ 35</span><span class="vs">vs same day last week</span></div>
       </div>
       <div class="divider"></div>
       <div class="stat">
-        <div class="num" id="t-out">112</div>
+        <div class="num"><span id="t-out">112</span><span class="u-sub" id="t-out-u"></span></div>
         <div class="lbl">Fulfilled today</div>
         <div class="delta up" id="t-out-d"><span>▲ 18</span><span class="vs">vs same day last week</span></div>
       </div>
@@ -218,11 +236,19 @@ body{
     </div>
   </section>
 
-  <!-- ===== MIDDLE BOTTOM — PICKER LEADERBOARD (horizontal) ===== -->
+  <!-- ===== MIDDLE BOTTOM — THIS WEEK (picking + packing split) ===== -->
   <section class="panel">
-    <div class="ph"><h2>Picker leaderboard</h2><span class="sub">orders picked · this month</span></div>
-    <div class="hbars" id="picker-bars"></div>
-    <div class="hbar-x" id="picker-x"></div>
+    <div class="ph"><h2>This week</h2><span class="sub">orders · Mon–Sun</span></div>
+    <div class="duo">
+      <div class="duo-col">
+        <div class="duo-cap">Picking</div>
+        <div class="hbars" id="wk-pick"></div>
+      </div>
+      <div class="duo-col">
+        <div class="duo-cap">Packing</div>
+        <div class="hbars" id="wk-pack"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ===== RIGHT COLUMN ===== -->
@@ -231,7 +257,8 @@ body{
       <div class="alert-dot">!</div>
       <div class="unf-row">
         <div class="unf-main">
-          <div class="big" id="unf">43</div>
+          <div class="big"><span id="unf">43</span></div>
+          <div class="u-line" id="unf-u"></div>
           <div class="lbl">unfulfilled orders</div>
           <div class="flt">awaiting item fulfilment · shipping</div>
         </div>
@@ -250,9 +277,15 @@ body{
       <div class="gauge-scale"><span>0</span><span>1 week</span><span>14 days</span></div>
     </section>
 
-    <section class="panel live">
-      <div class="ph"><h2>Live orders</h2><span class="sub">most recent</span></div>
-      <div class="notif-list" id="notif-list"></div>
+    <section class="panel goal">
+      <div class="ph"><h2>Fulfilment goal</h2><span class="sub">today · target 125</span></div>
+      <div class="goal-ring">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+          <circle class="ring-prog" id="goal-arc" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="goal-num"><span id="goal-done">0</span><span class="goal-tot">/125</span></div>
+      </div>
     </section>
   </div>
 
@@ -268,8 +301,8 @@ body{
     </div>
   </div>
   <div class="foot-right">
-    <div class="clock" id="clock">--:--</div>
-    <div class="tz">Melbourne · last update</div>
+    <div class="clock" id="now-clock">--:--<span class="secs">:--</span></div>
+    <div class="tz">Melbourne · <span id="countdown">next update —</span> · last update <span id="asof">—</span></div>
   </div>
 </footer>
 </div>
@@ -287,6 +320,7 @@ const SHOP_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMEAAADcCAYAAAD
 const $=id=>document.getElementById(id);
 const fmt=n=>n.toLocaleString('en-AU');
 const money=v=>'$'+v.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+function setUnits(id,u){ const e=$(id); if(!e)return; e.textContent=(u!=null? fmt(u)+' units':''); }
 function mel(opts){ return new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',...opts}).format(new Date()); }
 function ago(iso){ const s=(Date.now()-new Date(iso).getTime())/1000; if(s<60)return 'just now'; const m=Math.floor(s/60); if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; return Math.floor(h/24)+'d ago'; }
 function hhmm(iso){ return new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso)); }
@@ -338,11 +372,15 @@ function startFeed(orders){
 /* ===== render everything from window.SEED ===== */
 function render(){
   const S=window.SEED; if(!S)return;                 // no data yet → keep last good view
-  renderHBars('picker-bars','picker-x',S.month.pickers);
+  renderHBars('wk-pick',null,(S.week&&S.week.pickers)||[]);
+  renderHBars('wk-pack',null,(S.week&&S.week.packers)||[]);
   renderHBars('tp-pick',null,S.today.pickers);
   renderHBars('tp-pack',null,S.today.packers);
   $('t-in').textContent=fmt(S.today.ordersIn);
   $('t-out').textContent=fmt(S.today.fulfilled);
+  setUnits('t-in-u',S.today.unitsIn);
+  setUnits('t-out-u',S.today.unitsOut);
+  setUnits('unf-u',S.unfulfilledUnits);
   setDelta('t-in-d',S.today.deltaIn,S.today.deltaLbl);
   setDelta('t-out-d',S.today.deltaOut,S.today.deltaLbl);
   const tp=S.month.topPicker, tk=S.month.topPacker;
@@ -356,15 +394,20 @@ function render(){
   $('avg-fill').style.width=Math.min(100,S.avgDays/14*100)+'%';
   $('today-date').textContent=mel({weekday:'short',day:'numeric',month:'short'});
   $('month-name').textContent=mel({month:'long',year:'numeric'});
-  const clk=$('clock');
-  if(clk&&S.asOf) clk.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(S.asOf));
-  startFeed(S.orders);
+  { const a=$('asof'); if(a&&S.asOf) a.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(S.asOf)); }
+  updateGoal(S.today.fulfilled);
 }
 
-/* ===== relative-time refresh (footer time is set from S.asOf inside render) ===== */
-setInterval(()=>{ document.querySelectorAll('#notif-list .time .rel').forEach(r=>{ const at=r.parentElement.dataset.at; if(at) r.textContent=ago(at); }); },60000);
+/* ===== fulfilment goal ring (today vs 125) ===== */
+const GOAL_TARGET=125, RING_R=52, RING_C=2*Math.PI*RING_R;   // circumference ≈ 326.7
+function updateGoal(done){
+  done=done||0;
+  const n=$('goal-done'); if(n) n.textContent=fmt(done);
+  const arc=$('goal-arc');
+  if(arc){ const p=Math.max(0,Math.min(1,done/GOAL_TARGET)); arc.style.strokeDashoffset=(RING_C*(1-p)).toFixed(1); }
+}
 
-/* ===== load seed (cache-busted) + re-pull every 2 min to pick up the 15-min refresh ===== */
+/* ===== load seed (cache-busted) + re-pull every 60s to pick up the 5-min refresh ===== */
 function loadSeed(){
   const s=document.createElement('script');
   s.src='fulfilment-seed.js?v='+Date.now();
@@ -373,7 +416,24 @@ function loadSeed(){
   document.body.appendChild(s);
 }
 loadSeed();
-setInterval(loadSeed, 120000);
+setInterval(loadSeed, 60000);
+
+/* ===== live Melbourne clock (with seconds) + countdown to the next :X5 update ===== */
+/* Updates fire on the laptop at Melbourne :00/:05/:10… (whole-hour TZ ⇒ minute marks
+   are the same in any whole-hour-offset zone, so getMinutes() is fine for the countdown). */
+function pad2(n){ return (n<10?'0':'')+n; }
+function tickClock(){
+  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date());
+  const g=t=>(p.find(x=>x.type===t)||{}).value||'00';
+  const c=$('now-clock'); if(c) c.innerHTML=g('hour')+':'+g('minute')+'<span class="secs">:'+g('second')+'</span>';
+  const now=new Date();
+  const into=(now.getMinutes()%5)*60+now.getSeconds();   // seconds since the last :X5 mark
+  const remain=300-into;                                 // seconds to the next mark
+  const cd=$('countdown'); if(cd) cd.textContent='next update '+Math.floor(remain/60)+':'+pad2(remain%60);
+  if(into===0) loadSeed();                                // at the mark, re-pull (LAN sees new data instantly; the public mirror lands within the 60s poll)
+}
+tickClock();
+setInterval(tickClock,1000);
 
 /* ===== fit the 1920×1080 canvas to any screen, preserving proportions ===== */
 /* Fit the fixed 1920×1080 canvas into any viewport, preserving aspect ratio,
