@@ -209,7 +209,7 @@ body{
 .clock{font-family:"Archivo Black",sans-serif;font-size:clamp(20px,1.9cqw,34px);line-height:1;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;}
 .clock .secs{font-size:0.6em;color:var(--faint);}
 .tz{font-size:clamp(8px,0.6cqw,10px);letter-spacing:0.2em;text-transform:uppercase;color:var(--faint);}
-.tz .upd{color:var(--up);font-weight:600;}
+.upd{font-size:clamp(12px,1.14cqw,20px);color:var(--up);font-weight:700;letter-spacing:0.04em;line-height:1.1;margin-top:2px;font-variant-numeric:tabular-nums;}
 </style>
 </head>
 <body>
@@ -353,7 +353,8 @@ body{
   </div>
   <div class="foot-right">
     <div class="clock" id="now-clock">--:--<span class="secs">:--</span></div>
-    <div class="tz">last update <span id="asof">—</span><span id="upd" class="upd"></span></div>
+    <div class="tz">last update <span id="asof">—</span></div>
+    <div class="upd" id="upd"></div>
   </div>
 </footer>
 </div>
@@ -452,13 +453,15 @@ function render(){
   $('today-date').textContent=mel({weekday:'short',day:'numeric',month:'short'});
   $('month-name').textContent=mel({month:'long',year:'numeric'});
   { const a=$('asof'); if(a&&S.asOf) a.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(S.asOf)); }
-  // per-update summary: change in orders / item-fulfilments since the previous sync this page saw
+  // per-update summary: change in orders / item-fulfilments since the previous sync this page saw.
+  // Persists until the NEXT sync replaces it; never blanks (a decrease = day-rollover/recount → show fresh count).
   { const u=$('upd');
-    if(u && S.asOf && S.asOf!==window._updAsOf){            // only recompute when a NEW sync lands
+    if(u && S.asOf && S.asOf!==window._updAsOf){            // a NEW sync landed
       if(window._updAsOf!=null){
-        const dOrd=(S.today.ordersIn||0)-(window._updOrd||0);
-        const dFul=(S.today.fulfilled||0)-(window._updFul||0);
-        u.textContent=(dOrd>=0&&dFul>=0) ? ' · +'+fmt(dOrd)+' ORD, +'+fmt(dFul)+' IF' : '';
+        const o=S.today.ordersIn||0, f=S.today.fulfilled||0;
+        let dOrd=o-(window._updOrd||0), dFul=f-(window._updFul||0);
+        if(dOrd<0) dOrd=o; if(dFul<0) dFul=f;
+        u.textContent='+'+fmt(dOrd)+' ORD, +'+fmt(dFul)+' IF';
       }
       window._updAsOf=S.asOf; window._updOrd=S.today.ordersIn||0; window._updFul=S.today.fulfilled||0;
     }
