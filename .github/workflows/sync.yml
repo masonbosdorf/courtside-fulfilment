@@ -1,13 +1,12 @@
 name: fulfilment-sync
 
-# Cloud data refresh — runs the same node fetchers the laptop runs, but in GitHub's
-# infrastructure, so the dashboard stays current with NO laptop dependency.
-# NOTE: GitHub's scheduler is best-effort — */5 effectively lands ~5–15 min apart.
+# Cloud data refresh — runs the node fetchers in GitHub's infrastructure (no laptop).
+# Triggered every 5 min by cron-job.org hitting the workflow_dispatch API (reliable).
+# GitHub's own `schedule:` was REMOVED — it's unreliable AND it double-fired alongside
+# cron-job.org, racing on the git push and producing spurious "Scheduled failed" emails.
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch: {}        # manual "Run workflow" button
+  workflow_dispatch: {}        # fired every 5 min by cron-job.org + the manual "Run workflow" button
 
 permissions:
   contents: write              # allow committing the refreshed seed back
@@ -69,5 +68,9 @@ jobs:
             echo "no data change"
           else
             git commit -m "data $(TZ=Australia/Melbourne date +'%d-%m %H:%M') [cloud]"
-            git push
+            # resilient publish: if another run pushed first, rebase on top and retry (no race failures)
+            for i in 1 2 3; do
+              git pull --rebase --autostash -q origin main && git push && break
+              echo "push race — retrying ($i)"; sleep 2
+            done
           fi
