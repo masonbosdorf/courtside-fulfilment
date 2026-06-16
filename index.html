@@ -375,7 +375,7 @@ const money=v=>'$'+v.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFrac
 function setUnits(id,u){ const e=$(id); if(!e)return; e.textContent=(u!=null? fmt(u)+' units':''); }
 function mel(opts){ return new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',...opts}).format(new Date()); }
 function ago(iso){ const s=(Date.now()-new Date(iso).getTime())/1000; if(s<60)return 'just now'; const m=Math.floor(s/60); if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; return Math.floor(h/24)+'d ago'; }
-function hhmm(iso){ return new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso)); }
+function hhmm(iso){ return new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(iso)); }
 
 /* ===== horizontal leaderboards ===== */
 function renderHBars(barsId,xId,data){
@@ -452,7 +452,7 @@ function render(){
   $('avg-fill').style.width=Math.min(100,S.avgDays/14*100)+'%';
   $('today-date').textContent=mel({weekday:'short',day:'numeric',month:'short'});
   $('month-name').textContent=mel({month:'long',year:'numeric'});
-  { const a=$('asof'); if(a&&S.asOf) a.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(S.asOf)); }
+  { const a=$('asof'); if(a&&S.asOf) a.textContent=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(S.asOf)); }
   // per-update summary: change in orders / item-fulfilments since the previous sync this page saw.
   // Persists until the NEXT sync replaces it; never blanks (a decrease = day-rollover/recount → show fresh count).
   { const u=$('upd');
@@ -540,7 +540,7 @@ setInterval(loadSeed, 60000);
    so we just display the actual last-update time (#asof, set in render from the seed's asOf).
    loadSeed() polls every 60s, so the footer time advances whenever fresh data lands. */
 function tickClock(){
-  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date());
+  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date());
   const g=t=>(p.find(x=>x.type===t)||{}).value||'00';
   const c=$('now-clock'); if(c) c.innerHTML=g('hour')+':'+g('minute')+'<span class="secs">:'+g('second')+'</span>';
 }

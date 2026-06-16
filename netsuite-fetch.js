@@ -86,7 +86,9 @@ async function main(){
         const doneRows = await suiteql(
           `SELECT DISTINCT so.otherrefnum AS ref FROM transaction so WHERE so.recordtype='salesorder' AND so.otherrefnum IN (${inClause}) AND EXISTS (SELECT 1 FROM nexttransactionlinelink l JOIN transaction iff ON iff.id=l.nextdoc WHERE l.previousdoc=so.id AND iff.recordtype='itemfulfillment')`);
         const doneSet = new Set(doneRows.map(d => String(d.ref || '').trim()));
-        const open = rows.filter(r => !doneSet.has(r.ref));
+        // exclude orders that are DONE (have an IF) OR older than 14 days (dead/stuck — not real backlog)
+        const CUTOFF_MS = Date.now() - 14 * 24 * 60 * 60 * 1000;
+        const open = rows.filter(r => !doneSet.has(r.ref) && r.createdAt && new Date(r.createdAt).getTime() >= CUTOFF_MS);
         unfulfilled = open.length;
         unfulfilledUnits = open.reduce((a, r) => a + r.units, 0);
 

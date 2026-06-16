@@ -12,8 +12,9 @@ const s = global.window.SEED;
 if (!s) { console.error('stamp-asof: no SEED'); process.exit(1); }
 
 const now = new Date();
-const f = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit',
-  day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+// hourCycle:'h23' is REQUIRED — en-CA/en-GB with hour12:false renders midnight as "24:00" (invalid ISO).
+const f = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, year: 'numeric', month: '2-digit',
+  day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 const o = {}; for (const p of f.formatToParts(now)) o[p.type] = p.value;
 const off = new Intl.DateTimeFormat('en-US', { timeZone: TZ, timeZoneName: 'longOffset' })
   .formatToParts(now).find(x => x.type === 'timeZoneName').value.replace('GMT', '') || '+10:00';

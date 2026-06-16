@@ -5,7 +5,7 @@ const now = new Date();
 
 function melParts(d) {
   const f = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit',
-    day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });   // h23 → midnight is "00" not "24"
   const o = {}; for (const p of f.formatToParts(d)) o[p.type] = p.value;
   return o; // {year,month,day,hour,minute}
 }

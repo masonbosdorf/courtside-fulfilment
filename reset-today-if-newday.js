@@ -18,8 +18,12 @@ try { require(seedPath); } catch (e) { console.log('reset: seed unreadable, skip
 const s = global.window.SEED;
 if (!s || !s.asOf || !s.today) { console.log('reset: no seed/asOf, skip'); process.exit(0); }
 
+const seedDate = new Date(s.asOf);
+if (isNaN(seedDate.getTime())) {        // bad/garbage asOf — never crash; let the fetchers run + restamp it
+  console.log('reset: asOf invalid (' + s.asOf + ') — skipping reset, fetchers will repopulate'); process.exit(0);
+}
 const today   = melDay(new Date());
-const seedDay = melDay(new Date(s.asOf));
+const seedDay = melDay(seedDate);
 if (today === seedDay) { console.log('reset: same day (' + today + '), no reset'); process.exit(0); }
 
 s.today.fulfilled = 0;
