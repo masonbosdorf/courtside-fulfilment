@@ -352,7 +352,7 @@ body{
   </div>
   <div class="foot-right">
     <div class="clock" id="now-clock">--:--<span class="secs">:--</span></div>
-    <div class="tz">Melbourne · <span id="countdown">next update —</span> · last update <span id="asof">—</span></div>
+    <div class="tz">Melbourne · last update <span id="asof">—</span></div>
   </div>
 </footer>
 </div>
@@ -520,19 +520,14 @@ function loadSeed(){
 loadSeed();
 setInterval(loadSeed, 60000);
 
-/* ===== live Melbourne clock (with seconds) + countdown to the next :X5 update ===== */
-/* Updates fire on the laptop at Melbourne :00/:05/:10… (whole-hour TZ ⇒ minute marks
-   are the same in any whole-hour-offset zone, so getMinutes() is fine for the countdown). */
-function pad2(n){ return (n<10?'0':'')+n; }
+/* ===== live Melbourne clock (with seconds) — last-update time is shown beneath it ===== */
+/* No countdown: the cloud sync (GitHub Actions) is best-effort ~5–15 min, not a rigid tick,
+   so we just display the actual last-update time (#asof, set in render from the seed's asOf).
+   loadSeed() polls every 60s, so the footer time advances whenever fresh data lands. */
 function tickClock(){
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Australia/Melbourne',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date());
   const g=t=>(p.find(x=>x.type===t)||{}).value||'00';
   const c=$('now-clock'); if(c) c.innerHTML=g('hour')+':'+g('minute')+'<span class="secs">:'+g('second')+'</span>';
-  const now=new Date();
-  const into=(now.getMinutes()%5)*60+now.getSeconds();   // seconds since the last :X5 mark
-  const remain=300-into;                                 // seconds to the next mark
-  const cd=$('countdown'); if(cd) cd.textContent='next update '+Math.floor(remain/60)+':'+pad2(remain%60);
-  if(into===0) loadSeed();                                // at the mark, re-pull (LAN sees new data instantly; the public mirror lands within the 60s poll)
 }
 tickClock();
 setInterval(tickClock,1000);
