@@ -1,0 +1,73 @@
+name: fulfilment-sync
+
+# Cloud data refresh — runs the same node fetchers the laptop runs, but in GitHub's
+# infrastructure, so the dashboard stays current with NO laptop dependency.
+# NOTE: GitHub's scheduler is best-effort — */5 effectively lands ~5–15 min apart.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}        # manual "Run workflow" button
+
+permissions:
+  contents: write              # allow committing the refreshed seed back
+
+concurrency:
+  group: fulfilment-sync       # never overlap runs
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compute Melbourne dates
+        run: node gh-compute-dates.js >> "$GITHUB_ENV"
+
+      - name: Reset today's metrics if it's a new Melbourne day
+        run: node reset-today-if-newday.js "$GITHUB_WORKSPACE/fulfilment-seed.js"
+
+      - name: Shopify fetch
+        id: shopify
+        continue-on-error: true
+        env:
+          FS_SHOPIFY_DOMAIN:        ${{ secrets.FS_SHOPIFY_DOMAIN }}
+          FS_SHOPIFY_CLIENT_ID:     ${{ secrets.FS_SHOPIFY_CLIENT_ID }}
+          FS_SHOPIFY_CLIENT_SECRET: ${{ secrets.FS_SHOPIFY_CLIENT_SECRET }}
+        run: node shopify-fetch.js "$GITHUB_WORKSPACE/fulfilment-seed.js" "$TODAY_ISO" "$LW_ISO" "$NOW_HM" "$SHOP_OFFSET"
+
+      - name: NetSuite fetch
+        id: netsuite
+        continue-on-error: true
+        env:
+          FS_ACCOUNT:         ${{ secrets.FS_ACCOUNT }}
+          FS_CONSUMER_KEY:    ${{ secrets.FS_CONSUMER_KEY }}
+          FS_CONSUMER_SECRET: ${{ secrets.FS_CONSUMER_SECRET }}
+          FS_TOKEN_ID:        ${{ secrets.FS_TOKEN_ID }}
+          FS_TOKEN_SECRET:    ${{ secrets.FS_TOKEN_SECRET }}
+          UNFULFILLED_LIVE:   ${{ steps.shopify.outcome == 'success' && '1' || '0' }}
+        run: node netsuite-fetch.js "$GITHUB_WORKSPACE/fulfilment-seed.js" /tmp/unf_orders.json "$TODAY_NS" "$MONTH_START_NS" "$LW_NS" "$NOW_HM" "$WEEK_START_NS"
+
+      - name: Fail if BOTH fetchers failed
+        if: steps.shopify.outcome != 'success' && steps.netsuite.outcome != 'success'
+        run: echo "both Shopify and NetSuite failed" && exit 1
+
+      - name: Stamp asOf (Melbourne)
+        run: node gh-stamp-asof.js "$GITHUB_WORKSPACE/fulfilment-seed.js"
+
+      - name: Commit & push if the data changed
+        run: |
+          git config user.name  "fulfilment-bot"
+          git config user.email "fulfilment-bot@users.noreply.github.com"
+          git add fulfilment-seed.js
+          if git diff --cached --quiet; then
+            echo "no data change"
+          else
+            git commit -m "data $(TZ=Australia/Melbourne date +'%d-%m %H:%M') [cloud]"
+            git push
+          fi
