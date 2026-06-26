@@ -51,8 +51,8 @@ body{
 .rotate-bar{position:absolute;top:0;left:0;right:0;height:clamp(3px,0.4cqh,6px);background:rgba(255,255,255,0.07);z-index:60;overflow:hidden;}
 .rotate-fill{height:100%;width:100%;background:var(--up);transform-origin:left center;transform:scaleX(1);will-change:transform;box-shadow:0 0 8px rgba(70,224,138,0.5);}
 .views{flex:1;min-height:0;position:relative;overflow:hidden;}
-.track{display:flex;width:300%;height:100%;transform:translateX(0);transition:transform 0.75s cubic-bezier(0.7,0,0.2,1);will-change:transform;}
-.view{flex:0 0 33.3333%;width:33.3333%;height:100%;min-width:0;display:flex;flex-direction:column;}
+.track{display:flex;width:200%;height:100%;transform:translateX(0);transition:transform 0.75s cubic-bezier(0.7,0,0.2,1);will-change:transform;}
+.view{flex:0 0 50%;width:50%;height:100%;min-width:0;display:flex;flex-direction:column;}
 
 /* ===== screen 2 — unfulfilled orders by date (large text, no chart) ===== */
 .view-dates{padding:clamp(16px,1.8cqw,34px) clamp(20px,2.4cqw,46px) clamp(10px,1cqw,18px);}
@@ -74,41 +74,19 @@ body{
 .date-orders{font-size:clamp(10px,0.95cqw,17px);letter-spacing:0.13em;text-transform:uppercase;color:var(--muted);}
 .date-units{font-size:clamp(10px,0.82cqw,15px);color:var(--faint);font-family:"Archivo Black",sans-serif;font-weight:400;margin-left:clamp(4px,0.5cqw,9px);}
 .date-age{font-size:clamp(9px,0.72cqw,13px);letter-spacing:0.1em;text-transform:uppercase;color:var(--bad);margin-left:clamp(8px,0.9cqw,16px);opacity:0.85;}
-
-/* ===== screen 3 — warehouse stocktake progress ===== */
-.view-stk{padding:clamp(16px,1.8cqw,34px) clamp(20px,2.4cqw,46px) clamp(10px,1cqw,18px);}
-.stk-head{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;gap:clamp(16px,2cqw,40px);border-bottom:1px solid var(--line);padding-bottom:clamp(10px,1.1cqh,18px);margin-bottom:clamp(12px,1.4cqh,26px);}
-.stk-head h1{font-family:"Archivo Black",sans-serif;font-size:clamp(22px,2.95cqw,54px);letter-spacing:-0.02em;line-height:1;}
-.stk-sub{font-size:clamp(9px,0.78cqw,13px);letter-spacing:0.18em;text-transform:uppercase;color:var(--faint);margin-top:clamp(6px,0.8cqh,11px);}
-.stk-overall{flex:0 0 auto;display:flex;align-items:baseline;gap:clamp(8px,0.9cqw,16px);}
-.stk-overall .ov-num{font-family:"Archivo Black",sans-serif;font-size:clamp(40px,5.6cqw,104px);letter-spacing:-0.03em;line-height:0.82;color:var(--up);}
-.stk-overall .ov-lbl{font-size:clamp(10px,0.95cqw,17px);letter-spacing:0.13em;text-transform:uppercase;color:var(--muted);max-width:11ch;text-align:right;}
-.stk-grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.6cqw,30px);margin-bottom:clamp(12px,1.4cqh,24px);}
-.stk-cat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:clamp(18px,1.9cqw,38px) clamp(20px,2.1cqw,42px);display:flex;flex-direction:column;gap:clamp(14px,1.7cqh,30px);min-height:0;position:relative;overflow:hidden;}
-.stk-cat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent);}
-.stk-cat-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
-.stk-cat-name{font-family:"Archivo Black",sans-serif;font-size:clamp(20px,2.2cqw,40px);letter-spacing:-0.01em;line-height:1;}
-.stk-cat-meta{font-size:clamp(10px,0.85cqw,15px);letter-spacing:0.1em;text-transform:uppercase;color:var(--faint);}
-.stk-metric{display:flex;flex-direction:column;gap:clamp(6px,0.8cqh,12px);}
-.stk-m-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
-.stk-m-lbl{font-size:clamp(11px,0.95cqw,17px);letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);}
-.stk-m-val{font-family:"Archivo Black",sans-serif;font-size:clamp(22px,2.5cqw,46px);letter-spacing:-0.02em;font-variant-numeric:tabular-nums;}
-.stk-m-val .stk-of{font-size:0.5em;color:var(--faint);letter-spacing:0;}
-.stk-bar{height:clamp(14px,1.7cqh,24px);background:rgba(255,255,255,0.06);border-radius:5px;position:relative;overflow:hidden;}
-.stk-fill{position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--w));background:var(--accent);border-radius:5px;transition:transform 0.9s cubic-bezier(0.16,1,0.3,1);box-shadow:0 0 14px color-mix(in srgb,var(--accent) 45%,transparent);}
-.stk-m-foot{display:flex;align-items:baseline;justify-content:space-between;}
-.stk-pct{font-family:"Archivo Black",sans-serif;font-size:clamp(13px,1.15cqw,21px);color:var(--accent);}
-.stk-rem{font-size:clamp(9px,0.74cqw,13px);letter-spacing:0.1em;text-transform:uppercase;color:var(--faint);}
-.stk-total{flex:0 0 auto;background:var(--panel-2);border:1px solid var(--line);border-radius:18px;padding:clamp(16px,1.7cqw,32px) clamp(20px,2.1cqw,42px);display:grid;grid-template-columns:auto 1fr 1fr;align-items:center;gap:clamp(16px,1.8cqw,36px);}
-.stk-total .tl{font-family:"Archivo Black",sans-serif;font-size:clamp(15px,1.5cqw,27px);letter-spacing:0.02em;white-space:nowrap;}
-.tt-metric{display:flex;flex-direction:column;gap:clamp(5px,0.7cqh,10px);min-width:0;}
-.tt-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
-.tt-lbl{font-size:clamp(10px,0.82cqw,15px);letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);}
-.tt-val{font-family:"Archivo Black",sans-serif;font-size:clamp(16px,1.7cqw,30px);font-variant-numeric:tabular-nums;}
-.tt-val .stk-of{font-size:0.5em;color:var(--faint);}
-.tt-bar{height:clamp(10px,1.3cqh,18px);background:rgba(255,255,255,0.06);border-radius:4px;position:relative;overflow:hidden;}
-.tt-fill{position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--w));background:var(--up);border-radius:4px;transition:transform 0.9s cubic-bezier(0.16,1,0.3,1);}
-.stk-note{flex:0 0 auto;margin-top:clamp(8px,0.9cqh,14px);font-size:clamp(8.5px,0.66cqw,12px);letter-spacing:0.06em;color:var(--faint);text-align:center;}
+/* per-date "show order numbers" button + popover */
+.date-list-btn{flex:0 0 auto;align-self:center;margin-left:clamp(10px,1.1cqw,20px);width:clamp(28px,2.5cqw,46px);height:clamp(28px,2.5cqw,46px);border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-size:clamp(13px,1.2cqw,22px);line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,color .15s,border-color .15s;}
+.date-list-btn:hover,.date-list-btn:active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.ord-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);}
+.ord-overlay.on{display:flex;}
+.ord-panel{background:#15171c;border:1px solid rgba(255,255,255,0.12);border-radius:18px;width:min(86vw,820px);max-height:84vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.6);overflow:hidden;}
+.ord-head{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:20px 26px;border-bottom:1px solid rgba(255,255,255,0.1);}
+.ord-title{font-family:"Archivo Black",sans-serif;font-size:clamp(20px,3.4vw,34px);letter-spacing:-0.02em;line-height:1.05;}
+.ord-sub{font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#8a90a0;margin-top:7px;}
+.ord-close{flex:0 0 auto;width:40px;height:40px;border-radius:10px;border:1px solid rgba(255,255,255,0.14);background:transparent;color:#cfd3dc;font-size:22px;line-height:1;cursor:pointer;}
+.ord-close:hover{background:rgba(255,255,255,0.08);color:#fff;}
+.ord-grid{padding:22px 26px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:10px;align-content:start;}
+.ord-no{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:clamp(13px,1.5vw,17px);text-align:center;padding:8px 6px;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:rgba(255,255,255,0.03);color:#e8eaf0;}
 
 /* ===== layout ===== */
 .dash{
@@ -387,59 +365,6 @@ body{
   <div class="dates-list" id="dates-list"></div>
 </section>
 
-<!-- ===== SCREEN 3 — WAREHOUSE STOCKTAKE PROGRESS ===== -->
-<section class="view view-stk">
-  <div class="stk-head">
-    <div>
-      <h1>Warehouse Stocktake</h1>
-      <div class="stk-sub">Loc 2 · from saved cycle-count scans</div>
-    </div>
-    <div class="stk-overall">
-      <div class="ov-num" id="stk-ov">0%</div>
-      <div class="ov-lbl">Bins counted warehouse-wide</div>
-    </div>
-  </div>
-  <div class="stk-grid">
-    <div class="stk-cat" style="--accent:var(--up)">
-      <div class="stk-cat-h"><div class="stk-cat-name">Footwear</div><div class="stk-cat-meta" id="stk-fw-sku"></div></div>
-      <div class="stk-metric">
-        <div class="stk-m-top"><span class="stk-m-lbl">Bins</span><span class="stk-m-val"><b id="stk-fw-bd">0</b> <span class="stk-of" id="stk-fw-bt">/ 0</span></span></div>
-        <div class="stk-bar"><div class="stk-fill" id="stk-fw-bb" style="--w:0"></div></div>
-        <div class="stk-m-foot"><span class="stk-pct" id="stk-fw-bp">0%</span><span class="stk-rem" id="stk-fw-br"></span></div>
-      </div>
-      <div class="stk-metric">
-        <div class="stk-m-top"><span class="stk-m-lbl">Units</span><span class="stk-m-val"><b id="stk-fw-ud">0</b> <span class="stk-of" id="stk-fw-ut">/ 0</span></span></div>
-        <div class="stk-bar"><div class="stk-fill" id="stk-fw-ub" style="--w:0"></div></div>
-        <div class="stk-m-foot"><span class="stk-pct" id="stk-fw-up">0%</span><span class="stk-rem" id="stk-fw-ur"></span></div>
-      </div>
-    </div>
-    <div class="stk-cat" style="--accent:#5b9dff">
-      <div class="stk-cat-h"><div class="stk-cat-name">Apparel + Accessories</div><div class="stk-cat-meta" id="stk-aa-sku"></div></div>
-      <div class="stk-metric">
-        <div class="stk-m-top"><span class="stk-m-lbl">Bins</span><span class="stk-m-val"><b id="stk-aa-bd">0</b> <span class="stk-of" id="stk-aa-bt">/ 0</span></span></div>
-        <div class="stk-bar"><div class="stk-fill" id="stk-aa-bb" style="--w:0"></div></div>
-        <div class="stk-m-foot"><span class="stk-pct" id="stk-aa-bp">0%</span><span class="stk-rem" id="stk-aa-br"></span></div>
-      </div>
-      <div class="stk-metric">
-        <div class="stk-m-top"><span class="stk-m-lbl">Units</span><span class="stk-m-val"><b id="stk-aa-ud">0</b> <span class="stk-of" id="stk-aa-ut">/ 0</span></span></div>
-        <div class="stk-bar"><div class="stk-fill" id="stk-aa-ub" style="--w:0"></div></div>
-        <div class="stk-m-foot"><span class="stk-pct" id="stk-aa-up">0%</span><span class="stk-rem" id="stk-aa-ur"></span></div>
-      </div>
-    </div>
-  </div>
-  <div class="stk-total">
-    <div class="tl">Warehouse total</div>
-    <div class="tt-metric">
-      <div class="tt-top"><span class="tt-lbl">Bins</span><span class="tt-val"><b id="stk-tot-bd">0</b> <span class="stk-of" id="stk-tot-bt">/ 0</span></span></div>
-      <div class="tt-bar"><div class="tt-fill" id="stk-tot-bb" style="--w:0"></div></div>
-    </div>
-    <div class="tt-metric">
-      <div class="tt-top"><span class="tt-lbl">Units</span><span class="tt-val"><b id="stk-tot-ud">0</b> <span class="stk-of" id="stk-tot-ut">/ 0</span></span></div>
-      <div class="tt-bar"><div class="tt-fill" id="stk-tot-ub" style="--w:0"></div></div>
-    </div>
-  </div>
-  <div class="stk-note">Totals = NetSuite Loc 2, on-hand &gt; 0. Progress from saved cycle-count scans · updated daily.</div>
-</section>
 </div></div>
 
 <!-- ===== FOOTER ===== -->
@@ -452,7 +377,7 @@ body{
     </div>
   </div>
   <div class="foot-mid">
-    <div class="dot-nav"><span class="nav-dot on" id="nd-0"></span><span class="nav-dot" id="nd-1"></span><span class="nav-dot" id="nd-2"></span></div>
+    <div class="dot-nav"><span class="nav-dot on" id="nd-0"></span><span class="nav-dot" id="nd-1"></span></div>
     <span class="hint">← → · click · auto 15s</span>
   </div>
   <div class="foot-right">
@@ -572,40 +497,8 @@ function render(){
   }
   updateGoal(T.fulfilled);
   renderDates();
-  renderStocktake();
 }
 function melDayKey(d){ return new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Melbourne',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
-
-/* ===== screen 3 — warehouse stocktake progress (data from S.stocktake, updated daily via Claude) ===== */
-function stkMetric(cat,kind,d,t){
-  const id=s=>$('stk-'+cat+'-'+kind+s); d=Math.min(d,t);
-  const D=id('d'),T=id('t'),B=id('b'),P=id('p'),R=id('r');
-  if(D) D.textContent=fmt(d);
-  if(T) T.textContent='/ '+fmt(t);
-  if(B) B.style.setProperty('--w', t?(d/t).toFixed(4):0);
-  if(P) P.textContent=(t?Math.round(100*d/t):0)+'%';
-  if(R) R.textContent=fmt(Math.max(0,t-d))+' to go';
-}
-function renderStocktake(){
-  if(!$('stk-ov'))return;
-  const st=(window.SEED&&window.SEED.stocktake)||{};
-  const fw=st.footwear||{}, aa=st.apparelAcc||{};
-  if($('stk-fw-sku')) $('stk-fw-sku').textContent=fw.skus!=null?fmt(fw.skus)+' SKUs':'';
-  if($('stk-aa-sku')) $('stk-aa-sku').textContent=aa.skus!=null?fmt(aa.skus)+' SKUs':'';
-  stkMetric('fw','b',fw.binsDone||0,fw.binsTotal||0);
-  stkMetric('fw','u',fw.unitsDone||0,fw.unitsTotal||0);
-  stkMetric('aa','b',aa.binsDone||0,aa.binsTotal||0);
-  stkMetric('aa','u',aa.unitsDone||0,aa.unitsTotal||0);
-  // Warehouse total: prefer the exact distinct count (st.total, incl EMPTY/uncategorised bins);
-  // fall back to summing the two categories if no total block is present.
-  const tot=st.total||{};
-  const tbd=tot.binsDone!=null?tot.binsDone:(fw.binsDone||0)+(aa.binsDone||0);
-  const tbt=tot.binsTotal!=null?tot.binsTotal:(fw.binsTotal||0)+(aa.binsTotal||0);
-  const tud=tot.unitsDone!=null?tot.unitsDone:(fw.unitsDone||0)+(aa.unitsDone||0);
-  const tut=tot.unitsTotal!=null?tot.unitsTotal:(fw.unitsTotal||0)+(aa.unitsTotal||0);
-  stkMetric('tot','b',tbd,tbt); stkMetric('tot','u',tud,tut);
-  if($('stk-ov')) $('stk-ov').textContent=(tbt?Math.round(100*tbd/tbt):0)+'%';
-}
 
 /* ===== screen 2 — unfulfilled orders grouped by order date (oldest first) ===== */
 function daysAgo(ymd){ // ymd = 'YYYY-MM-DD' (Melbourne); whole days between then and today
@@ -625,16 +518,19 @@ function renderDates(){
     if(d>=7) row.classList.add('stale');
     const age=d>=7?'<span class="date-age">'+d+'d old</span>':'';
     const units=r.units!=null?'<span class="date-units">'+fmt(r.units)+' units</span>':'';
+    const hasNos=r.nos&&r.nos.length;
     row.innerHTML='<div class="date-left"><span class="date-lbl">'+r.label+'</span>'+age+'</div>'+
-      '<div class="date-n"><span class="date-num">'+fmt(r.orders)+'</span><span class="date-orders">orders</span>'+units+'</div>';
+      '<div class="date-n"><span class="date-num">'+fmt(r.orders)+'</span><span class="date-orders">orders</span>'+units+
+      (hasNos?'<button class="date-list-btn" title="Show order numbers" aria-label="Show order numbers for '+r.label+'">▤</button>':'')+'</div>';
+    if(hasNos){ const b=row.querySelector('.date-list-btn'); b.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); ev.preventDefault(); openOrders(r); }); }
     list.appendChild(row);
   }
 }
 
 /* ===== kiosk rotation — slide between screens every 15s, with depleting-bar countdown
         and manual override (← prev · → / space next, which also resets the timer) ===== */
-const ROTATE_MS=15000, VIEW_COUNT=3; let viewIdx=0, rotateTimer=null, armAt=0, remain=ROTATE_MS, paused=false;
-const SCREEN_NAMES=['Daily','Date Breakdown','Stocktake Progress'];
+const ROTATE_MS=15000, VIEW_COUNT=2; let viewIdx=0, rotateTimer=null, armAt=0, remain=ROTATE_MS, paused=false;
+const SCREEN_NAMES=['Daily','Date Breakdown'];
 function setScreenChrome(idx){
   const st=$('screen-title'); if(st) st.textContent='— '+(SCREEN_NAMES[idx]||SCREEN_NAMES[0]);
   for(let k=0;k<VIEW_COUNT;k++){ const d=$('nd-'+k); if(d) d.classList.toggle('on', k===idx); }
@@ -667,18 +563,44 @@ addEventListener('keydown', e=>{
 /* Touch / mouse (iPad-friendly, Pointer Events):
    • quick TAP anywhere  → change screen (tap left third = back, elsewhere = forward)
    • PRESS-AND-HOLD      → pause the 15s auto-rotate while held; release resumes from where it paused */
+let ordOpen=false;   // true while the order-numbers popover is open → suppress kiosk tap-navigation
 const HOLD_MS=240; let downX=0, holdTimer=null, didHold=false; const stage=$('stage');
 if(stage){
   stage.addEventListener('pointerdown', e=>{
+    if(ordOpen) return;                                                      // popover open → ignore stage taps
     try{ stage.setPointerCapture(e.pointerId); }catch(_){}
     downX=e.clientX; didHold=false;
     holdTimer=setTimeout(()=>{ didHold=true; pauseRotation(); }, HOLD_MS);   // held long enough → pause
   });
   stage.addEventListener('pointerup', ()=>{ clearTimeout(holdTimer);
+    if(ordOpen) return;                                                      // popover open → don't navigate
     if(didHold){ resumeRotation(); didHold=false; return; }                  // was a hold → resume, don't navigate
     go(downX < innerWidth*0.33 ? -1 : 1); });                                // was a tap → change screen
   stage.addEventListener('pointercancel', ()=>{ clearTimeout(holdTimer); if(didHold){ resumeRotation(); didHold=false; } });
 }
+
+/* ===== screen 2 — order-number popover (small per-date button → list of Shopify order numbers) =====
+   Appended to <body> (outside the scaled #stage) so it overlays full-viewport. Opening pauses the
+   kiosk rotation; backdrop/×/Esc closes and resumes. */
+let ordOverlay=null;
+function buildOrdOverlay(){
+  ordOverlay=document.createElement('div'); ordOverlay.className='ord-overlay';
+  ordOverlay.innerHTML='<div class="ord-panel"><div class="ord-head"><div><div class="ord-title" id="ord-title">—</div><div class="ord-sub" id="ord-sub"></div></div><button class="ord-close" id="ord-close" aria-label="Close">×</button></div><div class="ord-grid" id="ord-grid"></div></div>';
+  document.body.appendChild(ordOverlay);
+  ordOverlay.addEventListener('pointerdown', e=>{ e.stopPropagation(); if(e.target===ordOverlay) closeOrders(); });  // backdrop closes
+  ordOverlay.addEventListener('pointerup', e=>{ e.stopPropagation(); });
+  ordOverlay.querySelector('#ord-close').addEventListener('pointerdown', e=>{ e.stopPropagation(); e.preventDefault(); closeOrders(); });
+}
+function openOrders(r){
+  if(!ordOverlay) buildOrdOverlay();
+  const nos=(r&&r.nos)||[];
+  ordOverlay.querySelector('#ord-title').textContent=(r&&r.label)||'Orders';
+  ordOverlay.querySelector('#ord-sub').textContent=nos.length+' order'+(nos.length===1?'':'s')+' · numerical order';
+  ordOverlay.querySelector('#ord-grid').innerHTML=nos.map(n=>'<span class="ord-no">#'+n+'</span>').join('');
+  ordOverlay.classList.add('on'); ordOpen=true; pauseRotation();
+}
+function closeOrders(){ if(ordOverlay) ordOverlay.classList.remove('on'); if(ordOpen){ ordOpen=false; resumeRotation(); } }
+addEventListener('keydown', e=>{ if(e.key==='Escape' && ordOpen){ e.preventDefault(); closeOrders(); } });
 
 /* ===== fulfilment goal ring (today vs 150) ===== */
 const GOAL_TARGET=150, RING_R=52, RING_C=2*Math.PI*RING_R;   // circumference ≈ 326.7

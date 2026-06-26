@@ -100,10 +100,12 @@ async function main(){
           if (!r.createdAt) continue;
           const d = new Date(r.createdAt); if (isNaN(d)) continue;
           const key = keyFmt.format(d);
-          if (!byDate[key]) byDate[key] = { key, label: lblFmt.format(d), orders: 0, units: 0 };
+          if (!byDate[key]) byDate[key] = { key, label: lblFmt.format(d), orders: 0, units: 0, nos: [] };
           byDate[key].orders++; byDate[key].units += r.units;
+          if (r.ref) byDate[key].nos.push(String(r.ref).trim());
         }
         unfulfilledByDate = Object.values(byDate).sort((a, b) => a.key.localeCompare(b.key));
+        for (const g of unfulfilledByDate) g.nos.sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0)); // order numbers ascending
       }
     } catch (e) { /* keep existing */ }
   }
