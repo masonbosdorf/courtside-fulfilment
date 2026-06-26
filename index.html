@@ -87,6 +87,9 @@ body{
 .ord-close:hover{background:rgba(255,255,255,0.08);color:#fff;}
 .ord-grid{padding:22px 26px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:10px;align-content:start;}
 .ord-no{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:clamp(13px,1.5vw,17px);text-align:center;padding:8px 6px;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:rgba(255,255,255,0.03);color:#e8eaf0;}
+.ord-no.exp{background:rgba(212,160,23,0.16);border-color:#d4a017;color:#f3cf63;font-weight:700;}
+.ord-no.pick{background:rgba(224,82,77,0.16);border-color:#e0524d;color:#ff9a93;font-weight:700;}
+.ord-sub .lg-exp{color:#f3cf63;} .ord-sub .lg-pick{color:#ff9a93;}
 
 /* ===== layout ===== */
 .dash{
@@ -594,9 +597,15 @@ function buildOrdOverlay(){
 function openOrders(r){
   if(!ordOverlay) buildOrdOverlay();
   const nos=(r&&r.nos)||[];
+  // tolerate both the old string form and the {n,t} form
+  const items=nos.map(x=> typeof x==='string' ? {n:x.replace(/^#/,''),t:'standard'} : {n:String(x.n).replace(/^#/,''),t:x.t||'standard'});
+  const exp=items.filter(o=>o.t==='express').length, pick=items.filter(o=>o.t==='pickup').length;
   ordOverlay.querySelector('#ord-title').textContent=(r&&r.label)||'Orders';
-  ordOverlay.querySelector('#ord-sub').textContent=nos.length+' order'+(nos.length===1?'':'s')+' · numerical order';
-  ordOverlay.querySelector('#ord-grid').innerHTML=nos.map(n=>'<span class="ord-no">#'+n+'</span>').join('');
+  let sub=items.length+' order'+(items.length===1?'':'s');
+  if(exp) sub+=' · <span class="lg-exp">'+exp+' express</span>';
+  if(pick) sub+=' · <span class="lg-pick">'+pick+' pickup</span>';
+  ordOverlay.querySelector('#ord-sub').innerHTML=sub;
+  ordOverlay.querySelector('#ord-grid').innerHTML=items.map(o=>'<span class="ord-no'+(o.t==='express'?' exp':o.t==='pickup'?' pick':'')+'">#'+o.n+'</span>').join('');
   ordOverlay.classList.add('on'); ordOpen=true; pauseRotation();
 }
 function closeOrders(){ if(ordOverlay) ordOverlay.classList.remove('on'); if(ordOpen){ ordOpen=false; resumeRotation(); } }

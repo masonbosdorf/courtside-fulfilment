@@ -10,6 +10,7 @@ const fs = require('fs');
 
 const [,, seedPath, TODAY, LW, NOW_HM, OFFSET] = process.argv;
 const titleCase = s => String(s || '').replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+const EXPRESS = /express|overnight|priorit|next[\s-]?day|expedit/i;   // shipping-method title → express
 
 async function count(q) {
   const d = await graphql(`query($q:String!){ ordersCount(query:$q){ count } }`, { q });
@@ -43,19 +44,25 @@ async function main() {
     'lineItems(first:100){nodes{quantity}}', unitsOf);
   const unitsIn = todayUnitsArr.reduce((a, b) => a + b, 0);
 
-  // 2. FULL unshipped-shipping backlog list (paginated — complete) + its total units + order date
-  const backlogRows = await pageAll(
+  // 2. FULL unshipped-shipping backlog (paginated) — tagged express vs standard by shipping method
+  const shipRows = await pageAll(
     'status:open financial_status:paid fulfillment_status:unshipped delivery_method:shipping',
-    'name createdAt lineItems(first:100){nodes{quantity}}', n => ({ name: n.name, units: unitsOf(n), createdAt: n.createdAt }));
-  const backlog = backlogRows.map(r => r.name);
-  const unfulfilledUnits = backlogRows.reduce((a, r) => a + r.units, 0);
+    'name createdAt shippingLine{title} lineItems(first:100){nodes{quantity}}',
+    n => ({ name: n.name, units: unitsOf(n), createdAt: n.createdAt,
+            t: EXPRESS.test((n.shippingLine && n.shippingLine.title) || '') ? 'express' : 'standard' }));
+  const unfulfilledUnits = shipRows.reduce((a, r) => a + r.units, 0);   // headline (screen 1) = shipping only
 
-  // 3. pickup orders not yet marked ready (no IN_PROGRESS fulfillment order)
-  const pickup = await pageAll(
+  // 3. store-pickup orders (unshipped) — tagged pickup; pickupPending = those not yet marked ready
+  const pickupRows = await pageAll(
     'delivery_method:pick-up status:open financial_status:paid fulfillment_status:unshipped',
-    'fulfillmentOrders(first:5){ nodes{ status } }',
-    n => (n.fulfillmentOrders.nodes || []).some(f => f.status === 'IN_PROGRESS'));  // true = ready
-  const pickupPending = pickup.filter(ready => !ready).length;
+    'name createdAt lineItems(first:100){nodes{quantity}} fulfillmentOrders(first:5){ nodes{ status } }',
+    n => ({ name: n.name, units: unitsOf(n), createdAt: n.createdAt, t: 'pickup',
+            ready: (n.fulfillmentOrders.nodes || []).some(f => f.status === 'IN_PROGRESS') }));
+  const pickupPending = pickupRows.filter(r => !r.ready).length;
+
+  // combined backlog for the date-breakdown cross-check (shipping + pickup, each with its type tag)
+  const backlogRows = shipRows.concat(pickupRows.map(({ ready, ...r }) => r));
+  const backlog = backlogRows.map(r => r.name);
 
   // 4. live-orders feed (10 most recent)
   // NOTE: customer{displayName} needs read_customers + protected-data access — omitted, so the

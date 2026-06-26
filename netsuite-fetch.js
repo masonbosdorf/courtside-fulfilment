@@ -79,6 +79,7 @@ async function main(){
         ref: (o && o.name != null ? String(o.name) : String(o)).trim().replace(/^#?/, '#'),
         units: Number((o && o.units) || 0),
         createdAt: o && o.createdAt,
+        t: (o && o.t) || 'standard',
       })).filter(r => r.ref && r.ref !== '#');
       if (rows.length) {
         const inClause = rows.map(r => "'" + r.ref.replace(/'/g, '') + "'").join(',');
@@ -89,8 +90,9 @@ async function main(){
         // exclude orders that are DONE (have an IF) OR older than 14 days (dead/stuck — not real backlog)
         const CUTOFF_MS = Date.now() - 14 * 24 * 60 * 60 * 1000;
         const open = rows.filter(r => !doneSet.has(r.ref) && r.createdAt && new Date(r.createdAt).getTime() >= CUTOFF_MS);
-        unfulfilled = open.length;
-        unfulfilledUnits = open.reduce((a, r) => a + r.units, 0);
+        const shipOpen = open.filter(r => r.t !== 'pickup');   // headline = shipping queue only
+        unfulfilled = shipOpen.length;
+        unfulfilledUnits = shipOpen.reduce((a, r) => a + r.units, 0);
 
         // group the OPEN subset by Melbourne order date (oldest first) for the date-breakdown view
         const keyFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }); // YYYY-MM-DD
@@ -102,10 +104,10 @@ async function main(){
           const key = keyFmt.format(d);
           if (!byDate[key]) byDate[key] = { key, label: lblFmt.format(d), orders: 0, units: 0, nos: [] };
           byDate[key].orders++; byDate[key].units += r.units;
-          if (r.ref) byDate[key].nos.push(String(r.ref).trim());
+          if (r.ref) byDate[key].nos.push({ n: r.ref.replace(/^#/, ''), t: r.t || 'standard' }); // {number, type}
         }
         unfulfilledByDate = Object.values(byDate).sort((a, b) => a.key.localeCompare(b.key));
-        for (const g of unfulfilledByDate) g.nos.sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0)); // order numbers ascending
+        for (const g of unfulfilledByDate) g.nos.sort((a, b) => (parseInt(a.n, 10) || 0) - (parseInt(b.n, 10) || 0)); // order numbers ascending
       }
     } catch (e) { /* keep existing */ }
   }
