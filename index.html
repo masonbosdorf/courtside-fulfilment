@@ -129,6 +129,8 @@ body{
 .pace-rail .mark::after{content:"ON PACE";position:absolute;top:-15px;left:50%;transform:translateX(-50%);
   font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.1em;color:var(--ink-2);white-space:nowrap}
 .pace-rail .mark.hide{display:none}
+/* near the end of the shift the centred label would overflow the tile — pin it inside */
+.pace-rail .mark.edge::after{left:auto;right:0;transform:none}
 .pace-legend{display:flex;justify-content:space-between;gap:12px;margin-top:9px;font-size:12px;color:var(--ink-2)}
 .pace-legend b{color:var(--ink);font-weight:700}
 
@@ -261,7 +263,7 @@ body{
   </div>
   <div class="sp"></div>
   <div class="shiftmeter">
-    <span class="cap" id="shift-label">Shift 07:00–16:30</span>
+    <span class="cap" id="shift-label">Shift</span>
     <div class="rail"><div class="fill" id="shift-fill"></div></div>
     <span class="cap" id="shift-left">—</span>
   </div>
@@ -395,8 +397,8 @@ body{
 
 /* ---------- CONFIG — the only business numbers on this page ---------- */
 const GOAL_TARGET   = 150;    // orders fulfilled per day (unchanged from the previous board)
-const SHIFT_START   = 7.0;    // 07:00 Melbourne
-const SHIFT_END     = 16.5;   // 16:30 Melbourne
+const SHIFT_START   = 8.0;    // 08:00 Melbourne
+const SHIFT_END     = 17.0;   // 17:00 Melbourne
 const AGE_WATCH     = 2;      // days: backlog starts showing amber
 const AGE_LATE      = 4;      // days: backlog shows red
 const AVG_TARGET_D  = 2;      // days: avg-time-to-fulfil target
@@ -537,34 +539,49 @@ function updateGoal(done){
   if($('goal-fill')) $('goal-fill').style.width=(pct*100).toFixed(1)+'%';
 
   const mark=$('pace-mark');
-  if(mark){ mark.style.left=(elapsed*100).toFixed(1)+'%'; mark.classList.toggle('hide', weekend); }
+  if(mark){
+    mark.style.left=(elapsed*100).toFixed(1)+'%';
+    mark.classList.toggle('hide', weekend);
+    mark.classList.toggle('edge', elapsed>0.92);
+  }
 
-  const hoursDone=hour-SHIFT_START, hoursLeft=SHIFT_END-hour;
-  const rateNow = hoursDone>0.25 ? (done/hoursDone) : null;
-  const rateNeed= hoursLeft>0.1  ? ((GOAL_TARGET-done)/hoursLeft) : null;
+  const hoursDone = Math.max(0, Math.min(hour, SHIFT_END) - SHIFT_START);   // worked so far, within the shift
+  const hoursLeft = Math.max(0, SHIFT_END - Math.max(hour, SHIFT_START));   // shift time still to come
+  const rateNow  = hoursDone>0.25 ? (done/hoursDone) : null;
+  const rateNeed = (!weekend && hoursLeft>0.1) ? ((GOAL_TARGET-done)/hoursLeft) : null;
+  const showNeed = rateNeed!=null && done<GOAL_TARGET;
   if($('rate-now'))  $('rate-now').textContent  = rateNow!=null ? rateNow.toFixed(1) : '—';
-  if($('rate-need')) $('rate-need').textContent = (rateNeed!=null && done<GOAL_TARGET) ? rateNeed.toFixed(1) : '—';
+  if($('rate-need')) $('rate-need').textContent = showNeed ? rateNeed.toFixed(1) : '—';
   const needWrap=$('rate-need-wrap');
-  if(needWrap) needWrap.style.visibility = (rateNeed!=null && done<GOAL_TARGET) ? 'visible' : 'hidden';
+  if(needWrap) needWrap.style.visibility = showNeed ? 'visible' : 'hidden';
 
   const tag=$('pace-tag'); if(!tag) return;
   const behind = GOAL_TARGET*elapsed - done;
   if(weekend)                 { tag.textContent='Weekend';        tag.className='tag'; }
   else if(done>=GOAL_TARGET)  { tag.textContent='Target hit';     tag.className='tag ok'; }
   else if(hour<SHIFT_START)   { tag.textContent='Before shift';   tag.className='tag'; }
-  else if(hour>SHIFT_END)     { tag.textContent=fmt(Math.round(GOAL_TARGET-done))+' short'; tag.className='tag warn'; }
+  else if(hour>=SHIFT_END)    { tag.textContent=fmt(Math.round(GOAL_TARGET-done))+' short'; tag.className='tag warn'; }
   else if(behind>3)           { tag.textContent=fmt(Math.round(behind))+' behind pace';    tag.className='tag warn'; }
   else if(behind<-3)          { tag.textContent=fmt(Math.round(-behind))+' ahead of pace'; tag.className='tag ok'; }
   else                        { tag.textContent='On pace';        tag.className='tag ok'; }
 }
 
 /* ===== shift meter in the top bar ===== */
+/* the label is derived from CONFIG so it can never disagree with the pace maths */
+function hhmmLabel(h){
+  const H=Math.floor(h), M=Math.round((h-H)*60);
+  return String(H).padStart(2,'0')+':'+String(M).padStart(2,'0');
+}
+function setShiftLabel(){
+  const l=$('shift-label');
+  if(l) l.textContent='Shift '+hhmmLabel(SHIFT_START)+'\u2013'+hhmmLabel(SHIFT_END);
+}
 function updateShift(){
   const { hour, dow } = melParts();
   const weekend=(dow===0||dow===6);
   const span=Math.max(0.5, SHIFT_END-SHIFT_START);
   const elapsed=Math.max(0,Math.min(1,(hour-SHIFT_START)/span));
-  const f=$('shift-fill'); if(f) f.style.width=(elapsed*100).toFixed(1)+'%';
+  const f=$('shift-fill'); if(f) f.style.width=(weekend?0:elapsed*100).toFixed(1)+'%';
   const l=$('shift-left'); if(!l) return;
   if(weekend)            l.textContent='closed';
   else if(hour<SHIFT_START) l.textContent='not started';
@@ -738,6 +755,7 @@ function tickClock(){
 }
 tickClock();
 setInterval(tickClock,1000);
+setShiftLabel();
 updateShift();   // seed-independent: correct even before the first seed lands
 /* shift meter + pace drift with the clock, not just with new data */
 setInterval(()=>{ updateShift(); const S=window.SEED; if(S) updateGoal((S.today&&S.today.fulfilled)||0); }, 60000);
