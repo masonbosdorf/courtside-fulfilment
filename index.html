@@ -30,10 +30,13 @@
    Deliberately a single dark world (a kiosk screen does not follow a viewer's
    OS theme), so every colour is painted explicitly.
 
-   PERFORMANCE NOTE: #stage is a scaled/transformed canvas. Continuously-running
-   animations inside it force non-stop compositing and slow weak warehouse PCs
-   (this is why the old 5s order-feed cycling was removed). Everything in here
-   animates ONCE on render; the only always-on transition is the 15s rotate bar.
+   PERFORMANCE NOTE: #stage is a scaled/transformed canvas. Work that forces layout
+   or paint inside it slows weak warehouse PCs — this is why the old order feed, which
+   rebuilt DOM nodes and ran entry animations every 5s, was removed. Everything in the
+   panels animates ONCE per render. The one always-on animation is the footer ticker,
+   which is a pure transform on its own promoted layer: the compositor slides that layer
+   without repainting anything above it, and its DOM is only rebuilt when the order set
+   actually changes.
    =========================================================== */
 :root{
   --bg:#0A0B0E;
@@ -67,7 +70,7 @@ body{
 #stage{
   position:fixed;top:0;left:0;width:1920px;height:1080px;
   transform-origin:top left;display:flex;flex-direction:column;
-  background:var(--bg);overflow:hidden;will-change:transform;cursor:pointer;
+  background:var(--bg);overflow:hidden;will-change:transform;cursor:default;
   touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
 .mono{font-family:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace}
@@ -76,9 +79,6 @@ body{
   font-size:11px;font-weight:500;letter-spacing:.19em;text-transform:uppercase;color:var(--ink-3);
 }
 
-/* ===== kiosk rotation: depleting countdown bar across the top ===== */
-.rotate-bar{position:absolute;top:0;left:0;right:0;height:4px;background:rgba(255,255,255,.07);z-index:60;overflow:hidden}
-.rotate-fill{height:100%;width:100%;background:var(--acc);transform-origin:left center;transform:scaleX(1);will-change:transform}
 
 /* ===== top bar ===== */
 .topbar{flex:0 0 auto;display:flex;align-items:center;gap:24px;padding:15px 30px 13px;border-bottom:1px solid var(--line)}
@@ -98,10 +98,9 @@ body{
 .stamp .upd{font-size:13px;color:var(--acc);font-weight:700;letter-spacing:.04em;line-height:1.1;margin-top:3px;font-variant-numeric:tabular-nums;min-height:14px}
 .dot-live{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc);margin-right:6px;vertical-align:1px}
 
-/* ===== sliding views ===== */
-.views{flex:1;min-height:0;position:relative;overflow:hidden}
-.track{display:flex;width:200%;height:100%;transform:translateX(0);transition:transform .75s cubic-bezier(.7,0,.2,1);will-change:transform}
-.view{flex:0 0 50%;width:50%;height:100%;min-width:0;display:flex;flex-direction:column}
+
+/* ===== the board (single screen) ===== */
+.view{flex:1;min-height:0;display:flex;flex-direction:column}
 
 /* ===== pipeline band ===== */
 .pipe{flex:0 0 auto;display:grid;grid-template-columns:1fr 26px 1fr 26px 1fr 26px 1.18fr;align-items:stretch;padding:16px 30px 0}
@@ -136,6 +135,7 @@ body{
 /* ===== main grid ===== */
 .grid{flex:1;min-height:0;display:grid;grid-template-columns:1.34fr 1fr 1.05fr;grid-template-rows:1fr 1fr;
   gap:14px;padding:14px 30px 10px}
+.panel.tall{grid-row:1/3}
 .panel{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:17px 20px 15px;
   display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
 .ph{flex:0 0 auto;display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:13px}
@@ -146,19 +146,25 @@ body{
 .empty{font-size:14px;color:var(--ink-3);padding:16px 2px;font-style:italic}
 
 /* --- backlog age ladder --- */
-.ladder{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:5px;overflow:hidden}
-.rung{flex:1 1 0;min-height:0;max-height:88px;display:grid;grid-template-columns:168px 1fr 86px;align-items:center;column-gap:13px;overflow:hidden}
+.ladder{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:5px;overflow:hidden}
+.rung{flex:1 1 0;min-height:0;max-height:158px;display:grid;grid-template-columns:180px 1fr 92px 22px;align-items:center;column-gap:13px;overflow:hidden;padding:0 6px}
 .rung .lbl{min-width:0;display:flex;align-items:baseline;gap:7px}
-.rung .lbl .d{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.rung .lbl .d{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .rung .lbl .a{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.05em;color:var(--ink-3);white-space:nowrap;flex:0 0 auto}
 .rung.watch .lbl .a{color:var(--watch)}
 .rung.late .lbl .a{color:var(--late)}
-.rung .tk{height:clamp(14px,72%,28px);border-radius:5px;background:rgba(255,255,255,.045);position:relative;overflow:hidden}
+.rung .tk{height:clamp(16px,46%,34px);border-radius:5px;background:rgba(255,255,255,.045);position:relative;overflow:hidden}
 .rung .fl{position:absolute;top:0;bottom:0;left:0;border-radius:5px;transform-origin:left;animation:grow .8s cubic-bezier(.16,1,.3,1) backwards}
 @keyframes grow{from{transform:scaleX(0)}}
 .rung .n{display:flex;align-items:baseline;justify-content:flex-end;gap:7px}
-.rung .n .o{font-family:"Archivo Black",Impact,sans-serif;font-size:24px;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.rung .go{font-family:"IBM Plex Mono",monospace}
+.rung .n .o{font-family:"Archivo Black",Impact,sans-serif;font-size:27px;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .rung .n .u{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3)}
+/* rows with order numbers open the popover */
+.rung.has-nos{cursor:pointer;border-radius:7px;transition:background .15s}
+.rung.has-nos:hover{background:rgba(255,255,255,.035)}
+.rung .go{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink-3);text-align:right;opacity:.55;transition:opacity .15s,color .15s}
+.rung.has-nos:hover .go{opacity:1;color:var(--acc)}
 .ladder-foot{flex:0 0 auto;margin-top:12px;padding-top:11px;border-top:1px solid var(--line);
   display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--ink-2)}
 .ladder-foot b{color:var(--ink);font-weight:700}
@@ -202,35 +208,7 @@ body{
 .leader .n{font-family:"Archivo Black",Impact,sans-serif;font-size:38px;letter-spacing:-.04em;line-height:.9;font-variant-numeric:tabular-nums}
 .rule{height:1px;background:var(--line)}
 
-/* ===== screen 2 — unfulfilled orders by date ===== */
-.view-dates{padding:18px 34px 10px}
-.dates-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:28px;
-  border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:10px}
-.dates-head h1{font-family:"Archivo Black",Impact,sans-serif;font-size:42px;letter-spacing:-.03em;line-height:1}
-.dates-sub{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin-top:8px}
-.dates-total{flex:0 0 auto;display:flex;align-items:baseline;gap:14px}
-.dates-total #ud-total{font-family:"Archivo Black",Impact,sans-serif;font-size:66px;letter-spacing:-.04em;line-height:.85;font-variant-numeric:tabular-nums}
-.dates-total-lbl{font-size:13.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);max-width:22ch;text-align:right;line-height:1.45}
-.dates-list{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
-.date-row{flex:1 1 0;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:28px;
-  border-bottom:1px solid rgba(255,255,255,.055)}
-.dates-list .date-row:last-child{border-bottom:none}
-.date-left{flex:1;min-width:0;display:flex;align-items:baseline;gap:16px}
-.date-lbl{font-family:"Archivo Black",Impact,sans-serif;font-size:40px;letter-spacing:-.03em;line-height:1;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.date-n{flex:0 0 auto;display:flex;align-items:baseline;gap:11px}
-.date-num{font-family:"Archivo Black",Impact,sans-serif;font-size:60px;letter-spacing:-.04em;line-height:.85;font-variant-numeric:tabular-nums}
-.date-orders{font-size:14px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2)}
-.date-units{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink-3);margin-left:6px}
-.date-age{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-left:12px}
-.date-row.watch .date-age{color:var(--watch)}
-.date-row.late .date-age{color:var(--late)}
-/* per-date "show order numbers" button + popover */
-.date-list-btn{flex:0 0 auto;align-self:center;margin-left:16px;width:42px;height:42px;border-radius:10px;
-  border:1px solid var(--line-2);background:var(--surf-2);color:var(--ink-2);font-size:20px;line-height:1;
-  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
-.date-list-btn:hover,.date-list-btn:active{background:var(--acc);color:#06231a;border-color:var(--acc)}
-.date-list-btn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+/* order-number popover, opened from a backlog row */
 .ord-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
   background:rgba(0,0,0,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .ord-overlay.on{display:flex}
@@ -251,34 +229,34 @@ body{
 .ord-sub .lg-exp{color:#F3CF63} .ord-sub .lg-pick{color:#FF9A93}
 
 /* ===== footer ===== */
-.foot{flex:0 0 auto;display:flex;align-items:center;gap:22px;padding:10px 30px 12px;border-top:1px solid var(--line)}
-.foot .navwrap{display:flex;align-items:center;gap:13px;flex:0 0 auto}
-.dot-nav{display:flex;gap:8px}
-.nav-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.2);transition:all .3s}
-.nav-dot.on{background:var(--acc);width:28px;border-radius:999px}
-.foot .hint{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
-.foot .sep{width:1px;align-self:stretch;background:var(--line);flex:0 0 auto}
-.latest{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;list-style:none;gap:2px;overflow:hidden}
-.latest li{flex:1 1 0;min-height:0;max-height:64px;overflow:hidden;display:grid;grid-template-columns:1fr auto auto auto;
-  align-items:center;column-gap:14px;border-bottom:1px solid rgba(255,255,255,.045)}
-.latest li:last-child{border-bottom:none}
-.latest li .id{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink)}
-.latest li .v{font-size:15px;color:var(--acc);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
-.latest li .q{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2);text-align:right;min-width:56px}
-.latest li .t{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3);text-align:right;min-width:44px}
-.latest li.none{grid-template-columns:1fr;color:var(--ink-3);font-style:italic}
-.foot .sp{flex:1}
+.foot{flex:0 0 auto;display:flex;align-items:center;gap:20px;padding:11px 30px 13px;border-top:1px solid var(--line)}
+.foot .k{flex:0 0 auto}
+/* Scrolling order ticker. Animates transform ONLY, on its own promoted layer, so the
+   scaled #stage above it is never repainted — the compositor just moves one layer.
+   (The old order feed was slow because it rebuilt DOM + ran entry animations every 5s.) */
+.ticker{flex:1;min-width:0;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 34px,#000 calc(100% - 34px),transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,#000 34px,#000 calc(100% - 34px),transparent 100%)}
+.ticker ul{display:flex;width:max-content;gap:34px;list-style:none;will-change:transform;
+  transform:translate3d(0,0,0);animation:tick 40s linear infinite}
+@keyframes tick{from{transform:translate3d(0,0,0)}to{transform:translate3d(var(--shift,-50%),0,0)}}
+.ticker li{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink-2);white-space:nowrap}
+.ticker li .id{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+.ticker li .v{color:var(--acc);font-weight:700;font-variant-numeric:tabular-nums}
+.ticker li .t{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3)}
+.ticker li .dot{color:var(--ink-3);opacity:.5}
+.ticker li.none{color:var(--ink-3);font-style:italic}
+.ticker.is-empty{-webkit-mask-image:none;mask-image:none}
 </style>
 </head>
 <body>
 <div id="stage">
-<div class="rotate-bar"><div class="rotate-fill" id="rotate-fill"></div></div>
 
 <!-- ===== TOP BAR ===== -->
 <header class="topbar">
   <img class="mark" id="cs-mark" alt="CourtSide" />
   <div class="wordmark">
-    <div class="t1">Fulfilment <span class="scr" id="screen-title">— Daily</span></div>
+    <div class="t1">Fulfilment <span class="scr">Today</span></div>
     <div class="t2">CourtSide Melbourne · Warehouse</div>
   </div>
   <div class="sp"></div>
@@ -294,10 +272,8 @@ body{
   </div>
 </header>
 
-<div class="views"><div class="track" id="track">
-
-  <!-- ============ SCREEN 1 — DAILY ============ -->
-  <section class="view">
+<!-- ============ THE BOARD ============ -->
+<section class="view">
 
     <section class="pipe">
       <div class="stage-t">
@@ -336,7 +312,7 @@ body{
     </section>
 
     <div class="grid">
-      <section class="panel">
+      <section class="panel tall">
         <div class="ph"><h2>Backlog by order date</h2><span class="eyebrow">Oldest first</span></div>
         <div class="ladder" id="ladder"></div>
         <div class="ladder-foot">
@@ -345,10 +321,6 @@ body{
         </div>
       </section>
 
-      <section class="panel">
-        <div class="ph"><h2>Latest orders</h2><span class="eyebrow">Newest first</span></div>
-        <ul class="latest" id="latest-list"></ul>
-      </section>
 
       <section class="panel">
         <div class="ph">
@@ -404,31 +376,10 @@ body{
     </div>
   </section>
 
-  <!-- ============ SCREEN 2 — UNFULFILLED ORDERS BY DATE ============ -->
-  <section class="view view-dates">
-    <div class="dates-head">
-      <div>
-        <h1>Unfulfilled Orders</h1>
-        <div class="dates-sub">by order date · oldest first</div>
-      </div>
-      <div class="dates-total">
-        <span id="ud-total">—</span>
-        <span class="dates-total-lbl">orders awaiting<br>fulfilment · shipping</span>
-      </div>
-    </div>
-    <div class="dates-list" id="dates-list"></div>
-  </section>
-
-</div></div>
-
 <!-- ===== FOOTER ===== -->
 <footer class="foot">
-  <div class="navwrap">
-    <div class="dot-nav"><span class="nav-dot on" id="nd-0"></span><span class="nav-dot" id="nd-1"></span></div>
-    <span class="hint">← → · tap · hold to pause · auto 15s</span>
-  </div>
-  <div class="sp"></div>
-  <span class="hint">Orders in: Shopify paid · shipping &nbsp;|&nbsp; Fulfilled: NetSuite item fulfilment &nbsp;|&nbsp; Backlog: Shopify unshipped minus orders with an IF</span>
+  <span class="eyebrow k">Latest orders</span>
+  <div class="ticker"><ul id="ticker"></ul></div>
 </footer>
 </div>
 
@@ -450,8 +401,10 @@ const AGE_WATCH     = 2;      // days: backlog starts showing amber
 const AGE_LATE      = 4;      // days: backlog shows red
 const AVG_TARGET_D  = 2;      // days: avg-time-to-fulfil target
 const AVG_SCALE_D   = 14;     // days: full width of the avg-time bullet (unchanged)
-const LATEST_COUNT  = 6;
-const LADDER_MAX    = 8;      // backlog dates shown on screen 1 before the oldest collapse into one row      // orders shown in the footer strip
+const TICKER_COUNT  = 10;     // latest orders fed to the footer ticker (the seed carries 10)
+const TICKER_SEC_PER_ITEM = 3.2;  // ticker scroll speed, seconds per order
+const TICKER_MIN_ITEMS    = 10;   // repeat the list until at least this many items exist
+const LADDER_MAX    = 8;      // backlog dates shown before the oldest collapse into one row
 
 const $   = id => document.getElementById(id);
 const fmt = n  => (n==null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-AU');
@@ -548,17 +501,24 @@ function renderLadder(S){
   rows.forEach((r,i)=>{
     const d=daysAgo(r.key), sev=severity(d);
     const colour = d>=AGE_LATE ? 'var(--late)' : d>=AGE_WATCH ? 'var(--watch)' : 'var(--neutral-bar)';
+    const hasNos=!r._fold && r.nos && r.nos.length;
     const row=document.createElement('div');
-    row.className='rung'+(sev?' '+sev:'');
+    row.className='rung'+(sev?' '+sev:'')+(hasNos?' has-nos':'');
     row.innerHTML=
       '<div class="lbl"><span class="d"></span><span class="a">'+(r._fold?('· '+r._fold+' dates'):ageLabel(d))+'</span></div>'+
       '<div class="tk"><div class="fl"></div></div>'+
-      '<div class="n"><div class="o">'+fmt(r.orders)+'</div><div class="u">'+(r.units!=null?fmt(r.units)+'u':'')+'</div></div>';
+      '<div class="n"><span class="o">'+fmt(r.orders)+'</span><span class="u">'+(r.units!=null?fmt(r.units)+'u':'')+'</span></div>'+
+      '<div class="go">'+(hasNos?'▤':'')+'</div>';
     row.querySelector('.d').textContent = r._fold ? ('Before '+shortDate(rows[1]&&rows[1].key,'').replace(/^\w+ /,'')) : shortDate(r.key, r.label);
     const fl=row.querySelector('.fl');
     fl.style.width=Math.max(2.5,(r.orders||0)/max*100)+'%';
     fl.style.background=colour;
     fl.style.animationDelay=(i*55)+'ms';
+    if(hasNos){
+      row.setAttribute('role','button'); row.setAttribute('tabindex','0');
+      row.addEventListener('click', ()=>openOrders(r));
+      row.addEventListener('keydown', ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); openOrders(r); } });
+    }
     wrap.appendChild(row);
   });
 }
@@ -612,25 +572,41 @@ function updateShift(){
   else { const m=Math.round((SHIFT_END-hour)*60); l.textContent=Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m left'; }
 }
 
-/* ===== footer — latest orders (STATIC list, refreshed each render; never animated,
-        because continuous motion inside the scaled #stage slows weak warehouse PCs) ===== */
-let _latestKey=null;
-function renderLatest(S){
-  const ul=$('latest-list'); if(!ul) return;
-  const orders=((S&&S.orders)||[]).slice(0,LATEST_COUNT);
-  const key=orders.map(o=>o.no).join(',');
-  if(key===_latestKey) return;                       // unchanged → don't touch the DOM
-  _latestKey=key;
-  ul.innerHTML='';
-  if(!orders.length){ ul.innerHTML='<li class="none">No orders yet today</li>'; return; }
-  orders.forEach(o=>{
-    const li=document.createElement('li');
-    li.innerHTML='<span class="id"></span><span class="v">'+money(o.value)+'</span>'+
-      '<span class="q">'+(o.units||0)+((o.units===1)?' unit':' units')+'</span>'+
-      '<span class="t">'+hhmm(o.at)+'</span>';
-    li.querySelector('.id').textContent='#'+o.no;
-    ul.appendChild(li);
-  });
+/* ===== footer order ticker =====
+   Scrolls the latest orders across the bottom. The list is rebuilt ONLY when the order
+   set actually changes (not on every 60s poll), so the animation never restarts mid-scroll
+   and the DOM isn't churned — the old order feed was slow precisely because it rebuilt
+   nodes and ran entry animations every few seconds. The running animation is a pure
+   transform on one promoted layer, so the scaled #stage above it is never repainted.
+   The list is repeated enough times to overflow the strip, and one cycle shifts it by
+   exactly one copy, so the loop is seamless at any order count. */
+let _tickKey=null;
+function renderTicker(S){
+  const ul=$('ticker'); if(!ul) return;
+  const orders=((S&&S.orders)||[]).slice(0,TICKER_COUNT);
+  const key=orders.map(o=>o.no+':'+o.value+':'+o.units).join(',');
+  if(key===_tickKey) return;                        // unchanged → leave it scrolling
+  _tickKey=key;
+  const box=ul.parentNode;
+  if(!orders.length){
+    ul.innerHTML='<li class="none">No orders yet today</li>';
+    ul.style.animation='none';
+    if(box) box.classList.add('is-empty');
+    return;
+  }
+  if(box) box.classList.remove('is-empty');
+  const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const item=o=>'<li><span class="id">#'+esc(o.no)+'</span>'+
+    '<span class="v">'+money(o.value)+'</span>'+
+    '<span class="dot">·</span>'+
+    '<span>'+(o.units||0)+((o.units===1)?' unit':' units')+'</span>'+
+    '<span class="t">'+hhmm(o.at)+'</span></li>';
+  const reps=Math.max(2, Math.ceil(TICKER_MIN_ITEMS/orders.length));   // enough to overflow the strip
+  ul.innerHTML=orders.map(item).join('').repeat(reps);
+  ul.style.setProperty('--shift', (-100/reps).toFixed(4)+'%');          // one cycle = one copy
+  ul.style.animation='none'; void ul.offsetWidth;                       // restart cleanly
+  ul.style.animation='';
+  ul.style.animationDuration=(orders.length*TICKER_SEC_PER_ITEM).toFixed(1)+'s';
 }
 
 /* ===== render everything from window.SEED ===== */
@@ -680,7 +656,7 @@ function render(){
   renderCrew('crew-today', T.pickers, T.packers, 'No fulfilments yet today');
   renderCrew('crew-week', (S.week&&S.week.pickers)||[], (S.week&&S.week.packers)||[], 'Nothing picked or packed this week');
   renderLadder(S);
-  renderLatest(S);
+  renderTicker(S);
 
   $('month-name').textContent = mel({month:'long',year:'numeric'});
   { const a=$('asof');
@@ -704,40 +680,12 @@ function render(){
 
   updateGoal(T.fulfilled);
   updateShift();
-  renderDates();
 }
 
-/* ===== screen 2 — unfulfilled orders grouped by order date (oldest first) ===== */
-function renderDates(){
-  const S=window.SEED; const list=$('dates-list'); if(!list) return;
-  const data=(S&&S.unfulfilledByDate)||[];
-  const tot=$('ud-total'); if(tot) tot.textContent=fmt(data.reduce((a,r)=>a+(r.orders||0),0));
-  list.innerHTML='';
-  if(!data.length){ list.innerHTML='<div class="empty">No unfulfilled orders</div>'; return; }
-  for(const r of data){
-    const row=document.createElement('div');
-    const d=daysAgo(r.key), sev=severity(d);
-    row.className='date-row'+(sev?' '+sev:'');
-    const age = sev ? '<span class="date-age">'+d+'d old</span>' : '';
-    const units = r.units!=null ? '<span class="date-units">'+fmt(r.units)+(r.units===1?' unit':' units')+'</span>' : '';
-    const hasNos = r.nos && r.nos.length;
-    row.innerHTML=
-      '<div class="date-left"><span class="date-lbl"></span>'+age+'</div>'+
-      '<div class="date-n"><span class="date-num">'+fmt(r.orders)+'</span><span class="date-orders">orders</span>'+units+
-      (hasNos?'<button class="date-list-btn" title="Show order numbers" aria-label="Show order numbers for '+String(r.label||'').replace(/"/g,'')+'">▤</button>':'')+
-      '</div>';
-    row.querySelector('.date-lbl').textContent = r.label || shortDate(r.key,'');
-    if(hasNos){
-      const b=row.querySelector('.date-list-btn');
-      b.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); ev.preventDefault(); openOrders(r); });
-    }
-    list.appendChild(row);
-  }
-}
 
-/* ===== screen 2 — order-number popover =====
-   Appended to <body> (outside the scaled #stage) so it overlays full-viewport. Opening
-   pauses the kiosk rotation; backdrop / × / Esc closes and resumes. */
+/* ===== order-number popover — opened by tapping a backlog row =====
+   Appended to <body> (outside the scaled #stage) so it overlays the full viewport at
+   1:1 scale; backdrop / × / Esc closes it. */
 let ordOverlay=null, ordOpen=false;
 function buildOrdOverlay(){
   ordOverlay=document.createElement('div'); ordOverlay.className='ord-overlay';
@@ -763,80 +711,10 @@ function openOrders(r){
   ordOverlay.querySelector('#ord-sub').innerHTML=sub;
   ordOverlay.querySelector('#ord-grid').innerHTML=items.map(o=>
     '<span class="ord-no'+(o.t==='express'?' exp':o.t==='pickup'?' pick':'')+'">#'+o.n+'</span>').join('');
-  ordOverlay.classList.add('on'); ordOpen=true; pauseRotation();
+  ordOverlay.classList.add('on'); ordOpen=true;
 }
-function closeOrders(){ if(ordOverlay) ordOverlay.classList.remove('on'); if(ordOpen){ ordOpen=false; resumeRotation(); } }
+function closeOrders(){ if(ordOverlay) ordOverlay.classList.remove('on'); ordOpen=false; }
 addEventListener('keydown', e=>{ if(e.key==='Escape' && ordOpen){ e.preventDefault(); closeOrders(); } });
-
-/* ===== kiosk rotation — slide between screens every 15s, with depleting-bar countdown
-        and manual override (← prev · → / space next, which also resets the timer) ===== */
-const ROTATE_MS=15000, VIEW_COUNT=2;
-const SCREEN_NAMES=['Daily','Date Breakdown'];
-let viewIdx=0, rotateTimer=null, armAt=0, remain=ROTATE_MS, paused=false;
-function setScreenChrome(idx){
-  const st=$('screen-title'); if(st) st.textContent='— '+(SCREEN_NAMES[idx]||SCREEN_NAMES[0]);
-  for(let k=0;k<VIEW_COUNT;k++){ const d=$('nd-'+k); if(d) d.classList.toggle('on', k===idx); }
-}
-function showView(i){
-  viewIdx=((i%VIEW_COUNT)+VIEW_COUNT)%VIEW_COUNT;
-  const t=$('track'); if(t) t.style.transform='translateX(-'+(viewIdx*(100/VIEW_COUNT))+'%)';
-  setScreenChrome(viewIdx);
-}
-/* drive the depleting countdown bar from `fromScale` (1=full) down to 0 over `ms` */
-function runBar(fromScale, ms){
-  const f=$('rotate-fill'); if(!f) return;
-  f.style.transition='none'; f.style.transform='scaleX('+fromScale+')'; void f.offsetWidth;
-  f.style.transition='transform '+(ms/1000)+'s linear'; f.style.transform='scaleX(0)';
-}
-function currentBarScale(){
-  const f=$('rotate-fill'); if(!f) return 1;
-  const m=getComputedStyle(f).transform.match(/matrix\(([^)]+)\)/);
-  return m ? Math.max(0, Math.min(1, parseFloat(m[1].split(',')[0]))) : 1;
-}
-function arm(ms, fromScale){
-  clearTimeout(rotateTimer); paused=false; remain=ms; armAt=Date.now();
-  runBar(fromScale==null?1:fromScale, ms); rotateTimer=setTimeout(()=>go(1), ms);
-}
-function go(dir){ showView(viewIdx+dir); arm(ROTATE_MS, 1); }      // advance + fresh 15s
-function pauseRotation(){
-  if(paused) return; paused=true; clearTimeout(rotateTimer);
-  remain=Math.max(0, remain-(Date.now()-armAt));                    // freeze remaining time
-  const s=currentBarScale(), f=$('rotate-fill');
-  if(f){ f.style.transition='none'; f.style.transform='scaleX('+s+')'; }
-}
-function resumeRotation(){
-  if(!paused) return; paused=false; armAt=Date.now();
-  runBar(currentBarScale(), remain); clearTimeout(rotateTimer);
-  rotateTimer=setTimeout(()=>go(1), remain);                        // resume where it stopped
-}
-arm(ROTATE_MS, 1);
-addEventListener('keydown', e=>{
-  if(e.key==='ArrowLeft'){ e.preventDefault(); go(-1); }
-  else if(e.key==='ArrowRight'||e.code==='Space'||e.key===' '){ e.preventDefault(); go(1); }
-});
-/* Touch / mouse (iPad-friendly, Pointer Events):
-   • quick TAP anywhere  → change screen (tap left third = back, elsewhere = forward)
-   • PRESS-AND-HOLD      → pause the 15s auto-rotate while held; release resumes where it paused */
-const HOLD_MS=240; let downX=0, holdTimer=null, didHold=false;
-const stageEl=$('stage');
-if(stageEl){
-  stageEl.addEventListener('pointerdown', e=>{
-    if(ordOpen) return;                                                    // popover open → ignore stage taps
-    try{ stageEl.setPointerCapture(e.pointerId); }catch(_){}
-    downX=e.clientX; didHold=false;
-    holdTimer=setTimeout(()=>{ didHold=true; pauseRotation(); }, HOLD_MS); // held long enough → pause
-  });
-  stageEl.addEventListener('pointerup', ()=>{
-    clearTimeout(holdTimer);
-    if(ordOpen) return;                                                    // popover open → don't navigate
-    if(didHold){ resumeRotation(); didHold=false; return; }                // was a hold → resume, don't navigate
-    go(downX < innerWidth*0.33 ? -1 : 1);                                  // was a tap → change screen
-  });
-  stageEl.addEventListener('pointercancel', ()=>{
-    clearTimeout(holdTimer);
-    if(didHold){ resumeRotation(); didHold=false; }
-  });
-}
 
 /* ===== load seed (cache-busted) + re-pull every 60s to pick up the ~5-min cloud refresh ===== */
 function loadSeed(){
