@@ -223,12 +223,43 @@ body{
 .ord-close{flex:0 0 auto;width:40px;height:40px;border-radius:10px;border:1px solid var(--line-2);
   background:transparent;color:var(--ink-2);font-size:22px;line-height:1;cursor:pointer}
 .ord-close:hover{background:rgba(255,255,255,.08);color:var(--ink)}
-.ord-grid{padding:22px 26px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:10px;align-content:start}
+.ord-body{flex:1 1 auto;overflow:auto;padding:22px 26px}
+.ord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:10px;align-content:start}
 .ord-no{font-family:"IBM Plex Mono",monospace;font-size:clamp(13px,1.5vw,17px);text-align:center;padding:8px 6px;
-  border:1px solid var(--line-2);border-radius:8px;background:rgba(255,255,255,.03);color:var(--ink)}
+  border:1px solid var(--line-2);border-radius:8px;background:rgba(255,255,255,.03);color:var(--ink);cursor:pointer}
 .ord-no.exp{background:rgba(217,165,32,.16);border-color:var(--watch);color:#F3CF63;font-weight:700}
 .ord-no.pick{background:rgba(240,96,92,.16);border-color:var(--late);color:#FF9A93;font-weight:700}
 .ord-sub .lg-exp{color:#F3CF63} .ord-sub .lg-pick{color:#FF9A93}
+
+/* an order number expands into its lines (SKU · description · qty) + order totals */
+.ord-no:hover{background:rgba(255,255,255,.09)}
+.ord-no.sel{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:700}
+.ord-no.sel.exp{background:var(--watch);border-color:var(--watch);color:#241A00}
+.ord-no.sel.pick{background:var(--late);border-color:var(--late);color:#2D0907}
+.ord-det{margin-top:20px;border:1px solid var(--line-2);border-radius:14px;background:rgba(255,255,255,.035);overflow:hidden}
+.ord-det-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px 18px;flex-wrap:wrap;
+  padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.ord-det-no{font-family:"Archivo Black",Impact,sans-serif;font-size:clamp(17px,2.2vw,25px);letter-spacing:-.02em}
+.ord-det-cust{flex:1 1 auto;min-width:0;font-size:clamp(13px,1.5vw,17px);color:var(--ink)}
+.ord-det-when{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);white-space:nowrap}
+.ord-lines{width:100%;border-collapse:collapse}
+.ord-lines th{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;font-weight:400;padding:10px 18px 8px;border-bottom:1px solid var(--line)}
+.ord-lines th.qty,.ord-lines td.qty{text-align:right;width:1%;white-space:nowrap}
+.ord-lines td{padding:9px 18px;font-size:clamp(12px,1.35vw,15px);color:var(--ink);
+  border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top}
+.ord-lines tr:last-child td{border-bottom:none}
+.ord-lines td.sku{font-family:"IBM Plex Mono",monospace;color:var(--ink-2);white-space:nowrap}
+.ord-lines td.qty{font-family:"IBM Plex Mono",monospace;font-weight:700}
+.ord-det-foot{display:flex;flex-wrap:wrap;gap:6px 28px;padding:13px 18px;
+  background:rgba(255,255,255,.05);border-top:1px solid var(--line-2)}
+.ord-det-foot .kv{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3)}
+.ord-det-foot .kv b{display:block;margin-top:4px;font-family:inherit;font-size:clamp(14px,1.7vw,19px);
+  letter-spacing:-.01em;text-transform:none;color:var(--ink);font-weight:700}
+.ord-det-foot .kv.exp b{color:#F3CF63} .ord-det-foot .kv.pick b{color:#FF9A93}
+.ord-det-none{padding:16px 18px;font-size:13px;color:var(--ink-3)}
 
 /* ===== footer ===== */
 .foot{flex:0 0 auto;display:flex;align-items:center;gap:20px;padding:11px 30px 13px;border-top:1px solid var(--line)}
@@ -703,34 +734,80 @@ function render(){
 /* ===== order-number popover — opened by tapping a backlog row =====
    Appended to <body> (outside the scaled #stage) so it overlays the full viewport at
    1:1 scale; backdrop / × / Esc closes it. */
-let ordOverlay=null, ordOpen=false;
+let ordOverlay=null, ordOpen=false, ordItems=[], ordSel=-1;
 function buildOrdOverlay(){
   ordOverlay=document.createElement('div'); ordOverlay.className='ord-overlay';
   ordOverlay.innerHTML='<div class="ord-panel"><div class="ord-head"><div>'+
     '<div class="ord-title" id="ord-title">—</div><div class="ord-sub" id="ord-sub"></div></div>'+
     '<button class="ord-close" id="ord-close" aria-label="Close">×</button></div>'+
-    '<div class="ord-grid" id="ord-grid"></div></div>';
+    '<div class="ord-body"><div class="ord-grid" id="ord-grid"></div><div id="ord-det"></div></div></div>';
   document.body.appendChild(ordOverlay);
   ordOverlay.addEventListener('pointerdown', e=>{ e.stopPropagation(); if(e.target===ordOverlay) closeOrders(); });
   ordOverlay.addEventListener('pointerup',   e=>{ e.stopPropagation(); });
   ordOverlay.querySelector('#ord-close').addEventListener('pointerdown', e=>{ e.stopPropagation(); e.preventDefault(); closeOrders(); });
+  // tap an order number → expand / collapse its detail card under the grid
+  ordOverlay.querySelector('#ord-grid').addEventListener('pointerdown', e=>{
+    const chip = e.target.closest && e.target.closest('.ord-no'); if(!chip) return;
+    e.stopPropagation(); e.preventDefault();
+    const k=Number(chip.dataset.k); ordSel = (ordSel===k ? -1 : k); renderOrdDetail();
+  });
+}
+const ordEsc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function ordWhen(iso){                                   // ISO → "Wed 2 Sep · 12:13pm" (Melbourne)
+  if(!iso) return '';
+  const d=new Date(iso); if(isNaN(d)) return '';
+  const TZ={timeZone:'Australia/Melbourne'};
+  const day=new Intl.DateTimeFormat('en-AU',Object.assign({weekday:'short',day:'numeric',month:'short'},TZ)).format(d);
+  const tm =new Intl.DateTimeFormat('en-AU',Object.assign({hour:'numeric',minute:'2-digit',hour12:true},TZ)).format(d);
+  return day+' · '+tm.toLowerCase().replace(/\s/g,'');
+}
+// the expanded order: #no · customer · date, every line as SKU/description/qty, then unit + $ + shipping totals
+function renderOrdDetail(){
+  const box=ordOverlay && ordOverlay.querySelector('#ord-det'); if(!box) return;
+  ordOverlay.querySelectorAll('.ord-no').forEach((c,k)=>c.classList.toggle('sel', k===ordSel));
+  const o=ordItems[ordSel];
+  if(!o){ box.innerHTML=''; return; }
+  const lines=o.i||[];
+  const units=(o.u!=null) ? o.u : lines.reduce((a,l)=>a+(l.q||0),0);
+  const body=lines.length
+    ? '<table class="ord-lines"><thead><tr><th>SKU</th><th>Description</th><th class="qty">Qty</th></tr></thead><tbody>'+
+      lines.map(l=>'<tr><td class="sku">'+ordEsc(l.k||'—')+'</td><td>'+ordEsc(l.d||'—')+'</td>'+
+        '<td class="qty">'+fmt(l.q||0)+'</td></tr>').join('')+'</tbody></table>'
+    : '<div class="ord-det-none">Line detail lands with the next data refresh.</div>';
+  const cls=o.t==='express'?' exp':o.t==='pickup'?' pick':'';
+  box.innerHTML='<div class="ord-det">'+
+    '<div class="ord-det-head"><span class="ord-det-no">#'+ordEsc(o.n)+'</span>'+
+      '<span class="ord-det-cust">'+ordEsc(o.c||'—')+'</span>'+
+      '<span class="ord-det-when">'+ordEsc(ordWhen(o.at))+'</span></div>'+
+    body+
+    '<div class="ord-det-foot">'+
+      '<span class="kv">Units<b>'+fmt(units)+'</b></span>'+
+      '<span class="kv">Order total<b>'+ordEsc(money(o.v))+'</b></span>'+
+      '<span class="kv'+cls+'">Shipping<b>'+ordEsc(o.s||(o.t==='pickup'?'Store pickup':'—'))+'</b></span>'+
+    '</div></div>';
+  box.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 function openOrders(r){
   if(!ordOverlay) buildOrdOverlay();
   const nos=(r&&r.nos)||[];
   // tolerate both the old string form and the {n,t} form
-  const items=nos.map(x=> typeof x==='string' ? {n:x.replace(/^#/,''),t:'standard'} : {n:String(x.n).replace(/^#/,''),t:x.t||'standard'});
+  const items=nos.map(x=> typeof x==='string'
+    ? {n:x.replace(/^#/,''),t:'standard'}
+    : Object.assign({},x,{n:String(x.n).replace(/^#/,''),t:x.t||'standard'}));
   const exp=items.filter(o=>o.t==='express').length, pick=items.filter(o=>o.t==='pickup').length;
   ordOverlay.querySelector('#ord-title').textContent=(r&&r.label)||'Orders';
   let sub=items.length+' order'+(items.length===1?'':'s');
   if(exp)  sub+=' · <span class="lg-exp">'+exp+' express</span>';
   if(pick) sub+=' · <span class="lg-pick">'+pick+' pickup</span>';
   ordOverlay.querySelector('#ord-sub').innerHTML=sub;
-  ordOverlay.querySelector('#ord-grid').innerHTML=items.map(o=>
-    '<span class="ord-no'+(o.t==='express'?' exp':o.t==='pickup'?' pick':'')+'">#'+o.n+'</span>').join('');
+  ordItems=items; ordSel=-1;
+  ordOverlay.querySelector('#ord-grid').innerHTML=items.map((o,k)=>
+    '<span class="ord-no'+(o.t==='express'?' exp':o.t==='pickup'?' pick':'')+'" data-k="'+k+'"'+
+    ' role="button" tabindex="0" aria-label="Order '+ordEsc(o.n)+' detail">#'+ordEsc(o.n)+'</span>').join('');
+  renderOrdDetail();
   ordOverlay.classList.add('on'); ordOpen=true;
 }
-function closeOrders(){ if(ordOverlay) ordOverlay.classList.remove('on'); ordOpen=false; }
+function closeOrders(){ if(ordOverlay) ordOverlay.classList.remove('on'); ordOpen=false; ordSel=-1; ordItems=[]; }
 addEventListener('keydown', e=>{ if(e.key==='Escape' && ordOpen){ e.preventDefault(); closeOrders(); } });
 
 /* ===== load seed (cache-busted) + re-pull every 60s to pick up the ~5-min cloud refresh ===== */

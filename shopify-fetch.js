@@ -36,6 +36,20 @@ async function main() {
 
   const unitsOf = n => (n.lineItems.nodes || []).reduce((a, b) => a + (b.quantity || 0), 0);
 
+  // per-order detail carried through to the seed so the dashboard can expand an order number
+  // into its lines (SKU / description / qty) + totals + shipping method. Keys are short on
+  // purpose — this list is ~40 orders deep and ships inside fulfilment-seed.js.
+  const detailOf = n => ({
+    cust: (n.customer && n.customer.displayName) || (n.shippingAddress && n.shippingAddress.name) || '',
+    value: Number((n.totalPriceSet && n.totalPriceSet.shopMoney && n.totalPriceSet.shopMoney.amount) || 0),
+    ship: (n.shippingLine && n.shippingLine.title) || '',
+    items: (n.lineItems.nodes || [])
+      .filter(l => (l.quantity || 0) > 0)
+      .map(l => ({ k: l.sku || '', d: l.title || '', q: l.quantity || 0 })),
+  });
+  const DETAIL_SEL = 'totalPriceSet{shopMoney{amount}} customer{displayName} shippingAddress{name} shippingLine{title}';
+  const LINE_SEL   = 'lineItems(first:100){nodes{sku title quantity}}';
+
   // 1. orders in today + same-day-last-week (same elapsed); plus today's total units
   const todayIn = await count(`${SHIP} created_at:>='${TODAY}T00:00:00${OFFSET}'`);
   const lwIn    = await count(`${SHIP} created_at:>='${LW}T00:00:00${OFFSET}' created_at:<'${LW}T${NOW_HM}:00${OFFSET}'`);
@@ -47,17 +61,19 @@ async function main() {
   // 2. FULL unshipped-shipping backlog (paginated) — tagged express vs standard by shipping method
   const shipRows = await pageAll(
     'status:open financial_status:paid fulfillment_status:unshipped delivery_method:shipping',
-    'name createdAt shippingLine{title} lineItems(first:100){nodes{quantity}}',
-    n => ({ name: n.name, units: unitsOf(n), createdAt: n.createdAt,
-            t: EXPRESS.test((n.shippingLine && n.shippingLine.title) || '') ? 'express' : 'standard' }));
+    `name createdAt ${DETAIL_SEL} ${LINE_SEL}`,
+    n => Object.assign({ name: n.name, units: unitsOf(n), createdAt: n.createdAt,
+            t: EXPRESS.test((n.shippingLine && n.shippingLine.title) || '') ? 'express' : 'standard' },
+            detailOf(n)));
   const unfulfilledUnits = shipRows.reduce((a, r) => a + r.units, 0);   // headline (screen 1) = shipping only
 
   // 3. store-pickup orders (unshipped) — tagged pickup; pickupPending = those not yet marked ready
   const pickupRows = await pageAll(
     'delivery_method:pick-up status:open financial_status:paid fulfillment_status:unshipped',
-    'name createdAt lineItems(first:100){nodes{quantity}} fulfillmentOrders(first:5){ nodes{ status } }',
-    n => ({ name: n.name, units: unitsOf(n), createdAt: n.createdAt, t: 'pickup',
-            ready: (n.fulfillmentOrders.nodes || []).some(f => f.status === 'IN_PROGRESS') }));
+    `name createdAt ${DETAIL_SEL} ${LINE_SEL} fulfillmentOrders(first:5){ nodes{ status } }`,
+    n => Object.assign({ name: n.name, units: unitsOf(n), createdAt: n.createdAt, t: 'pickup',
+            ready: (n.fulfillmentOrders.nodes || []).some(f => f.status === 'IN_PROGRESS') },
+            detailOf(n), { ship: (n.shippingLine && n.shippingLine.title) || 'Store pickup' }));
   const pickupPending = pickupRows.filter(r => !r.ready).length;
 
   // combined backlog for the date-breakdown cross-check (shipping + pickup, each with its type tag)
