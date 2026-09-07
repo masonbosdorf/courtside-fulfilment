@@ -219,7 +219,16 @@ body{
 .ord-head{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;gap:18px;
   padding:20px 26px;border-bottom:1px solid var(--line-2)}
 .ord-title{font-family:"Archivo Black",Impact,sans-serif;font-size:clamp(20px,3.4vw,34px);letter-spacing:-.02em;line-height:1.05}
-.ord-sub{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.ord-sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:7px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.ord-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;line-height:1.35;
+  border:1px solid var(--line-2);border-radius:6px;background:rgba(255,255,255,.03)}
+.ord-pill b{font-weight:700;letter-spacing:.02em;color:var(--ink)}
+.ord-pill i{flex:0 0 auto;width:1px;height:11px;margin:0 2px;background:var(--line-2)}
+.ord-pill.exp{border-color:rgba(217,165,32,.45);background:rgba(217,165,32,.12);color:#F3CF63}
+.ord-pill.exp b{color:#F3CF63}
+.ord-pill.pick{border-color:rgba(240,96,92,.45);background:rgba(240,96,92,.12);color:#FF9A93}
+.ord-pill.pick b{color:#FF9A93}
 .ord-close{flex:0 0 auto;width:40px;height:40px;border-radius:10px;border:1px solid var(--line-2);
   background:transparent;color:var(--ink-2);font-size:22px;line-height:1;cursor:pointer}
 .ord-close:hover{background:rgba(255,255,255,.08);color:var(--ink)}
@@ -229,7 +238,7 @@ body{
   border:1px solid var(--line-2);border-radius:8px;background:rgba(255,255,255,.03);color:var(--ink);cursor:pointer}
 .ord-no.exp{background:rgba(217,165,32,.16);border-color:var(--watch);color:#F3CF63;font-weight:700}
 .ord-no.pick{background:rgba(240,96,92,.16);border-color:var(--late);color:#FF9A93;font-weight:700}
-.ord-sub .lg-exp{color:#F3CF63} .ord-sub .lg-pick{color:#FF9A93}
+
 
 /* an order number expands into its lines (SKU · description · qty) + order totals */
 .ord-no:hover{background:rgba(255,255,255,.09)}
@@ -761,6 +770,29 @@ function ordWhen(iso){                                   // ISO → "Wed 2 Sep �
   const tm =new Intl.DateTimeFormat('en-AU',Object.assign({hour:'numeric',minute:'2-digit',hour12:true},TZ)).format(d);
   return day+' · '+tm.toLowerCase().replace(/\s/g,'');
 }
+// group roll-up shown under the date: orders · units · unique SKUs · footwear/apparel/accessory unit split
+const CAT_LBL={fw:'FW',app:'APP',acc:'ACC',oth:'OTH'};
+function ordSummary(r, items, exp, pick){
+  const pill=(n,l,cls)=>'<span class="ord-pill'+(cls?' '+cls:'')+'"><b>'+fmt(n)+'</b> '+l+'</span>';
+  const skus=new Set(), mix={fw:0,app:0,acc:0,oth:0}; let units=0, lines=false;
+  for(const o of items){
+    const li=o.i||[];
+    units += (o.u!=null) ? o.u : li.reduce((a,l)=>a+(l.q||0),0);
+    for(const l of li){ lines=true; if(l.k) skus.add(l.k); mix[(l.g in mix)?l.g:'oth'] += (l.q||0); }
+  }
+  if(!units && r && r.units!=null) units=r.units;                 // pre-detail seed → group total
+  let out=pill(items.length,'Order'+(items.length===1?'':'s'));
+  if(units) out+=pill(units,'Unit'+(units===1?'':'s'));
+  if(lines){
+    out+=pill(skus.size,'SKU'+(skus.size===1?'':'s'));
+    const parts=Object.keys(CAT_LBL).filter(k=>mix[k]>0)
+      .map(k=>'<b>'+fmt(mix[k])+'</b> '+CAT_LBL[k]);
+    if(parts.length) out+='<span class="ord-pill">'+parts.join('<i></i>')+'</span>';
+  }
+  if(exp)  out+=pill(exp,'Express','exp');
+  if(pick) out+=pill(pick,'Pickup','pick');
+  return out;
+}
 // the expanded order: #no · customer · date, every line as SKU/description/qty, then unit + $ + shipping totals
 function renderOrdDetail(){
   const box=ordOverlay && ordOverlay.querySelector('#ord-det'); if(!box) return;
@@ -796,10 +828,7 @@ function openOrders(r){
     : Object.assign({},x,{n:String(x.n).replace(/^#/,''),t:x.t||'standard'}));
   const exp=items.filter(o=>o.t==='express').length, pick=items.filter(o=>o.t==='pickup').length;
   ordOverlay.querySelector('#ord-title').textContent=(r&&r.label)||'Orders';
-  let sub=items.length+' order'+(items.length===1?'':'s');
-  if(exp)  sub+=' · <span class="lg-exp">'+exp+' express</span>';
-  if(pick) sub+=' · <span class="lg-pick">'+pick+' pickup</span>';
-  ordOverlay.querySelector('#ord-sub').innerHTML=sub;
+  ordOverlay.querySelector('#ord-sub').innerHTML=ordSummary(r, items, exp, pick);
   ordItems=items; ordSel=-1;
   ordOverlay.querySelector('#ord-grid').innerHTML=items.map((o,k)=>
     '<span class="ord-no'+(o.t==='express'?' exp':o.t==='pickup'?' pick':'')+'" data-k="'+k+'"'+
