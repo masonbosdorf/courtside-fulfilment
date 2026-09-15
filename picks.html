@@ -76,6 +76,20 @@ input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px soli
 .chk{display:flex;gap:8px;align-items:center;color:var(--ink-2);font-size:13px}
 .lock-err{color:var(--late);min-height:18px;font-size:13px}
 .lock-note{margin:0;color:var(--ink-3);font-size:12px}
+.gate-card{width:min(360px,100%);justify-items:center;text-align:center}
+.gate-dots{display:flex;gap:12px;margin:4px 0 2px}
+.gate-dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line-2);transition:background .12s,border-color .12s}
+.gate-dots i.on{background:var(--ink);border-color:var(--ink)}
+.keypad{display:grid;grid-template-columns:repeat(3,78px);gap:10px}
+.keypad button{height:60px;border-radius:14px;border:1px solid var(--line-2);background:var(--surf-2);font-family:var(--display);font-size:24px;cursor:pointer;touch-action:manipulation}
+.keypad button:hover{background:var(--surf-3)}
+.keypad button:active{transform:scale(.97)}
+.keypad .fn{font-family:inherit;font-size:13px;font-weight:600;color:var(--ink-2)}
+.shake{animation:shake .35s}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+@media (prefers-reduced-motion:reduce){.shake{animation:none}}
+.zrow.all{background:var(--surf-2)}
+.zrow.all .zl{font-family:var(--display);font-weight:400;letter-spacing:-.01em}
 
 /* shell */
 .dev-bar{background:var(--watch-soft);color:var(--watch);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-align:center;padding:5px 12px}
@@ -203,6 +217,22 @@ table.t .b{font-weight:600}
 </head>
 <body>
 
+<div id="gate" class="lock" hidden>
+  <div class="lock-card gate-card">
+    <img class="logo" id="gate-logo" alt="">
+    <div class="lock-title">Pick Waves</div>
+    <div class="lock-sub mono">ENTER CODE</div>
+    <div class="gate-dots" id="gate-dots" role="status" aria-label="Code entry"></div>
+    <div class="keypad">
+      <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
+      <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
+      <button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button>
+      <button type="button" data-k="clear" class="fn">Clear</button><button type="button" data-k="0">0</button><button type="button" data-k="back" class="fn" aria-label="Delete">Del</button>
+    </div>
+    <div class="lock-err" id="gate-err" role="alert"></div>
+  </div>
+</div>
+
 <div id="lock" class="lock" hidden>
   <form class="lock-card" id="lock-form" autocomplete="off">
     <img class="logo" id="lock-logo" alt="">
@@ -293,7 +323,7 @@ const age = iso => {
   const h = (Date.now() - Date.parse(iso)) / 36e5;
   return h < 1 ? Math.max(1, Math.round(h * 60)) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd';
 };
-const zoneLabel = id => (S.Z.byId.get(id) || { label: id }).label;
+const zoneLabel = id => (id === PickLib.ALL ? PickLib.ALL_LABEL : (S.Z.byId.get(id) || { label: id }).label);
 const typePill = t => `<span class="pill ${esc(t)}">${t === 'express' ? 'Express' : t === 'pickup' ? 'Pickup' : 'Standard'}</span>`;
 
 // ------------------------------------------------------------------ feedback
@@ -534,7 +564,14 @@ function renderZones() {
       <div class="zo" title="Oldest order in this zone">${age(d.oldest)}</div>
       <button class="btn sm" data-zone="${esc(z.id)}">Wave</button></div>`;
   }).join('');
-  $('#zones').innerHTML = head + rows;
+  const R = S.plan.ready;
+  const allRow = R.length
+    ? `<div class="zrow all"><div class="zl">All zones</div><div class="zn">${fmtN(R.length)}</div>
+        <div class="zu">${fmtN(R.reduce((n, o) => n + o.units, 0))}u</div><div class="ze">${R.filter(o => o.type === 'express').length ? R.filter(o => o.type === 'express').length + ' exp' : ''}</div>
+        <div class="zo" title="Oldest ready order">${age(R.reduce((m, o) => (o.at < m ? o.at : m), R[0].at))}</div>
+        <button class="btn sm" data-zone="${PickLib.ALL}">Wave</button></div>`
+    : `<div class="zrow all empty"><div class="zl">All zones</div><div class="zn">0</div><div class="zu"></div><div class="ze"></div><div class="zo"></div><div></div></div>`;
+  $('#zones').innerHTML = head + allRow + rows;
 }
 
 function renderWaves() {
@@ -592,7 +629,7 @@ function openBuilder(zone) {
     <div class="mb">
       <aside class="form">
         <div class="f"><label class="fl" for="b-zone">Zone</label>
-          <select id="b-zone">${S.Z.zones.map(z => `<option value="${esc(z.id)}"${z.id === B.zone ? ' selected' : ''}>${esc(z.label)} — ${counts.get(z.id) || 0} ready</option>`).join('')}</select></div>
+          <select id="b-zone"><option value="${PickLib.ALL}"${B.zone === PickLib.ALL ? ' selected' : ''}>All zones — ${S.plan.ready.length} ready</option>${S.Z.zones.map(z => `<option value="${esc(z.id)}"${z.id === B.zone ? ' selected' : ''}>${esc(z.label)} — ${counts.get(z.id) || 0} ready</option>`).join('')}</select></div>
         <div class="f"><label class="fl" for="b-date">Ordered up to</label><input type="datetime-local" id="b-date"><div class="hint">Blank = every open order</div></div>
         <div class="f"><span class="fl">Delivery</span><div class="chips">${chips('ship', CHIP_SETS.ship)}</div></div>
         <div class="f"><span class="fl">Class</span><div class="chips">${chips('cls', CHIP_SETS.cls)}</div></div>
@@ -716,6 +753,64 @@ async function submitBuilder(B, print) {
   }
 }
 
+// ------------------------------------------------------------------ code gate
+// The same 6-digit code as the Stock Finder; only its SHA-256 is in this public file. A loose gate
+// on a public URL — the real protection is the passphrase (decryption) and the token (GitHub writes).
+// Passing it lasts for this tab's session; Lock clears it.
+const GATE_HASHES = ['7ba20f0ddf1b245cbe0e49a611a80263b30dca0d8d4bcb3a60ccc045b4199fc7'];
+const GATE_KEY = 'pw_gate';
+const GATE_ON = !DEV || qs.has('gate');
+
+async function sha256hex(s) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function gatePassed() {
+  try { return GATE_HASHES.includes(sessionStorage.getItem(GATE_KEY)); } catch (e) { return false; }
+}
+function showGate() {
+  return new Promise(resolve => {
+    const el = $('#gate'), card = el.querySelector('.gate-card'), dots = $('#gate-dots'), err = $('#gate-err');
+    let code = '', fails = 0, blockedUntil = 0, checking = false;
+    const paint = () => { dots.innerHTML = Array.from({ length: 6 }, (_, i) => `<i class="${i < code.length ? 'on' : ''}"></i>`).join(''); };
+    const press = async k => {
+      if (checking) return;
+      if (Date.now() < blockedUntil) { err.textContent = `Too many tries — wait ${Math.ceil((blockedUntil - Date.now()) / 1000)}s`; return; }
+      if (k === 'clear') code = '';
+      else if (k === 'back') code = code.slice(0, -1);
+      else if (/^\d$/.test(k) && code.length < 6) code += k;
+      err.textContent = '';
+      paint();
+      if (code.length < 6) return;
+      checking = true;
+      const h = await sha256hex(code);
+      checking = false;
+      if (GATE_HASHES.includes(h)) {
+        try { sessionStorage.setItem(GATE_KEY, h); } catch (e) { /* private mode: gate again next load */ }
+        document.removeEventListener('keydown', onKey);
+        el.hidden = true;
+        resolve();
+        return;
+      }
+      code = '';
+      fails++;
+      card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+      if (fails >= 5) { fails = 0; blockedUntil = Date.now() + 30000; err.textContent = 'Too many tries — wait 30s'; }
+      else err.textContent = 'Wrong code';
+      paint();
+    };
+    const onKey = e => {
+      if (/^\d$/.test(e.key)) press(e.key);
+      else if (e.key === 'Backspace') press('back');
+      else if (e.key === 'Escape') press('clear');
+    };
+    el.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) press(b.dataset.k); });
+    document.addEventListener('keydown', onKey);
+    el.hidden = false;
+    paint();
+  });
+}
+
 // ------------------------------------------------------------------ lock / boot
 function showLock(message) {
   $('#app').hidden = true;
@@ -745,6 +840,7 @@ async function unlock(cfg, remember) {
 
 function lock(keepToken) {
   const saved = store.get(CFG_KEY);
+  try { sessionStorage.removeItem(GATE_KEY); } catch (e) { /* private mode */ }
   store.del(CFG_KEY);
   if (keepToken && saved && saved.token) store.set(CFG_KEY, { token: saved.token });
   location.reload();
@@ -789,7 +885,8 @@ setInterval(() => { if (!$('#app').hidden && !document.hidden && !S.builder && !
 
 async function boot() {
   const logo = window.PICK_LOGO || '';
-  $('#lock-logo').src = logo; $('#top-logo').src = logo;
+  $('#lock-logo').src = logo; $('#top-logo').src = logo; $('#gate-logo').src = logo;
+  if (GATE_ON && !gatePassed()) await showGate();
   try {
     S.Z = PickLib.compileZones(await (await fetch('zones.json', { cache: 'no-store' })).json());
   } catch (e) {

@@ -90,6 +90,16 @@
       ok('filter: express-only wave has only express orders', w4.record.orders.every(o => S.pool.orders.find(x => x.no === o.no).type === 'express'), `${w4.record.id}: ${w4.record.count}`);
     }
 
+    // All zones: one wave takes every ready order, walking the whole warehouse in order
+    const readyNow = S.plan.ready.length;
+    const zonesNow = new Set(S.plan.ready.map(o => o.zone)).size;
+    const wAll = await A.saveWave(opts('*', 999));
+    ok('All zones wave takes every ready order', readyNow > 0 && wAll.record.count === readyNow && S.plan.ready.length === 0,
+      `${wAll.record.id}: ${wAll.record.count} orders across ${zonesNow} zones`);
+    ok('All zones wave is labelled', wAll.record.zoneLabel === 'All zones');
+    const allWalk = wAll.record.orders.map(o => L.walkKey(o.lines[0][1], S.Z));
+    ok('All zones slips walk the warehouse in order', allWalk.every((k, i) => i === 0 || allWalk[i - 1] <= k));
+
     A.renderApp();
     ok('waves panel lists every wave', document.querySelectorAll('#waves .wrow').length === S.index.waves.length, `${document.querySelectorAll('#waves .wrow').length} rows`);
   } catch (e) {

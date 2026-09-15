@@ -21,7 +21,12 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check', '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
   let failed = false;
-  const done = code => { try { chrome.kill('SIGKILL'); } catch (e) {} fs.rmSync(profile, { recursive: true, force: true }); process.exit(code); };
+  const done = code => {
+    try { chrome.kill('SIGKILL'); } catch (e) {}
+    // Chrome can still be flushing its profile for a moment after the kill — never fail a run on cleanup
+    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (e) {}
+    process.exit(code);
+  };
   try {
     let target;
     for (let i = 0; i < 100 && !target; i++) {

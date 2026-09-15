@@ -150,6 +150,19 @@ test('filter by zone/ship/units and sort express first then walk order', () => {
   assert.deepEqual(L.selectWave(ready, { filters: { sku: 'fa' } }).map(o => o.no), ['d1']);
 });
 
+test('All zones: every ready order, walk order across zones, labelled on the wave', () => {
+  const bins = { P: [['A-010-01', 5]], Q: [['D-002-01', 5]], R: [['A-002-01', 5]], S: [['NE-03', 5]] };
+  const ready = L.planOrders(pool([order('d', [['Q', 1]]), order('a10', [['P', 1]]), order('ne', [['S', 1]]), order('a2', [['R', 1]])], bins), null, Z).ready;
+  const all = L.selectWave(ready, { zone: L.ALL });
+  assert.deepEqual(all.map(o => o.no), ['a2', 'a10', 'd', 'ne']);
+  assert.equal(L.selectWave(ready, { zone: L.ALL, max: 2 }).length, 2);
+  assert.deepEqual(L.selectWave(ready, { zone: L.ALL, filters: { sku: 'Q' } }).map(o => o.no), ['d']);
+  const { record, slips } = L.buildWave(all, { id: 'W-1', zone: L.ALL, createdAt: '2026-09-15T03:00:00Z', Z });
+  assert.equal(record.zoneLabel, 'All zones');
+  assert.equal(slips.zoneLabel, 'All zones');
+  assert.equal(record.count, 4);
+});
+
 test('wave ids count up per Melbourne day', () => {
   const index = { waves: [{ id: 'W-260915-01' }, { id: 'W-260914-07' }] };
   assert.equal(L.nextWaveId(index, '2026-09-15T03:00:00Z'), 'W-260915-02');

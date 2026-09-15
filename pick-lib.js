@@ -29,6 +29,7 @@
 
   const SEP = '\u0000';
   const DAY = 864e5;
+  const ALL = '*', ALL_LABEL = 'All zones';   // builder zone value meaning "every ready order"
 
   // ------------------------------------------------------------------ zones + walk order
 
@@ -223,7 +224,7 @@
     const to = f.dateTo ? Date.parse(f.dateTo) : null;
     const sku = f.sku ? String(f.sku).trim().toUpperCase() : '';
     return ready.filter(o =>
-      (!f.zone || o.zone === f.zone) &&
+      (!f.zone || f.zone === ALL || o.zone === f.zone) &&
       (to === null || Date.parse(o.at) <= to) &&
       has(f.ship, o.type) &&
       has(f.states, o.state || '') &&
@@ -282,7 +283,7 @@
   // record → waves/index.json (no PII) · slips → encrypted waves/<id>.enc
   function buildWave(list, opts) {
     const z = opts.Z && opts.Z.byId.get(opts.zone);
-    const zoneLabel = z ? z.label : opts.zone;
+    const zoneLabel = opts.zone === ALL ? ALL_LABEL : z ? z.label : opts.zone;
     const units = list.reduce((n, o) => n + o.units, 0);
     const record = {
       id: opts.id, createdAt: opts.createdAt, zone: opts.zone, zoneLabel,
@@ -361,7 +362,7 @@
 
   return {
     compileZones, zoneOf, walkKey, reservations, stockMap, allocate, planOrders,
-    filterOrders, sortOrders, selectWave, SORT_LABELS, unitBucket,
+    filterOrders, sortOrders, selectWave, SORT_LABELS, unitBucket, ALL, ALL_LABEL,
     nextWaveId, buildWave, recheck, waveSummary,
   };
 });
