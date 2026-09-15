@@ -140,7 +140,11 @@ async function main() {
       method: title || (pickup ? 'Store pickup' : ''),
       state: (n.shippingAddress && n.shippingAddress.provinceCode) || (n.billingAddress && n.billingAddress.provinceCode) || '',
       note: n.note || '',
-      attrs: (n.customAttributes || []).filter(a => a.value).map(a => [a.key, a.value]),
+      // only customer-facing attributes (gift messages, delivery instructions) — the rest are
+      // tracking ids from apps (bct, _heatVid, cart-id, seller-id, Channel …) and don't belong on a slip
+      attrs: (n.customAttributes || [])
+        .filter(a => a.value && !String(a.key).startsWith('_') && /gift|message|note|instruction|deliver/i.test(a.key))
+        .map(a => [a.key, a.value]),
       hold: fos.includes('ON_HOLD'),
       pickupReady: pickup && fos.includes('IN_PROGRESS'),
       shipTo: addr(n.shippingAddress), billTo: addr(n.billingAddress),
