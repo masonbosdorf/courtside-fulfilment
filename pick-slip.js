@@ -2,13 +2,13 @@
    recheck) into ONE PDF: one A4 page per order, plus continuation pages only when an order's
    route is longer than a page. Browser only.
 
-   Needs, loaded first:  jsPDF 2.5.1 (window.jspdf) · JsBarcode 3.11.6 · optional pick-logo.js (window.PICK_LOGO)
+   Needs, loaded first:  jsPDF 2.5.1 (window.jspdf) · optional pick-logo.js (window.PICK_LOGO)
    Thumbnails: the Stock Finder image bank, same filename rule as its tools/build_thumbs.py.
 
      const doc = await PickSlip.render(slips, { thumbBase, printedAt });
      doc.save(PickSlip.fileName(slips));
 
-   Layout (mm, A4 portrait): header · order no + type badge + Code 128 · NetSuite SO / date /
+   Layout (mm, A4 portrait): header · order no + type badge · NetSuite SO / date /
    method / units · zone (+ "continues to") · SHIP TO | BILL TO · note (only if the customer left
    one) · route table in walk order (stop · thumb · BIN + backup · SKU/description · SIZE · QTY · tick)
    · footer with picked-by / packed-by lines. Black on white — nothing that burns toner. */
@@ -21,7 +21,7 @@
   const TABLE_Y = 106;                       // first-page table top when there is no note
   const CONT_TABLE_Y = 32;                   // continuation-page table top
   const INK = 17, MID = 105, FAINT = 160, RULE = 205, FILL = 243;
-  const COL = { n: 12, img: 20, bin: 47, sku: 90, size: 158, qty: 176, tick: 190 };
+  const COL = { n: 12, img: 20, bin: 47, sku: 90, size: 156, qty: 172, tick: 186 };   // tick column runs to PAGE.R
   const DEFAULT_THUMBS = 'https://masonbosdorf.github.io/courtside-stock-finder/img/';
 
   // ---------------------------------------------------------------- small helpers
@@ -105,12 +105,6 @@
     });
   }
 
-  function barcode(text) {
-    const c = document.createElement('canvas');
-    root.JsBarcode(c, String(text), { format: 'CODE128', displayValue: false, margin: 0, height: 90, width: 3 });
-    return { url: c.toDataURL('image/png'), ratio: c.width / c.height };
-  }
-
   // ---------------------------------------------------------------- blocks
 
   function noteLines(doc, o) {
@@ -136,9 +130,9 @@
     if (root.PICK_LOGO) { doc.addImage(root.PICK_LOGO, 'PNG', PAGE.L, 11, 11, 11); tx += 14; }
     txt(doc, 'CourtSide', tx, 16.3, 12, 'bold', INK);
     txt(doc, 'ONLINE ORDER PICK SLIP', tx, 21, 6.5, 'bold', MID, { charSpace: 0.6 });
-    txt(doc, slips.id, PAGE.R, 16.5, 15, 'bold', INK, { align: 'right' });
+    txt(doc, slips.id, PAGE.R, 16.3, 15, 'bold', INK, { align: 'right' });
     txt(doc, `${pad2(o.seq)} / ${pad2(slips.count)}   ·   ${slips.zoneLabel || slips.zone || ''}`,
-      PAGE.R, 22, 8.5, 'normal', MID, { align: 'right' });
+      PAGE.R, 21, 8.5, 'normal', MID, { align: 'right' });
     rule(doc, 26, 0.6, INK);
   }
 
@@ -163,13 +157,9 @@
     font(doc, 30, 'bold');
     badge(doc, o.type, PAGE.L + doc.getTextWidth(no) + 4, 34.5);
 
-    const bc = barcode(o.no), bh = 14, bw = Math.min(60, bh * bc.ratio);
-    doc.addImage(bc.url, 'PNG', PAGE.R - bw, 30.5, bw, bh);
-    txt(doc, o.no, PAGE.R - bw / 2, 48.5, 7, 'normal', MID, { align: 'center', charSpace: 1.2 });
-
     const bits = [o.so ? 'NetSuite ' + o.so : 'NOT IN NETSUITE', 'Ordered ' + when(o.at),
       o.method || typeLabel(o.type), plural(o.units, 'unit')];
-    txt(doc, fit(doc, bits.join('   ·   '), PAGE.R - PAGE.L - 64, 9, 'normal'), PAGE.L, 50, 9, 'normal', MID);
+    txt(doc, fit(doc, bits.join('   ·   '), PAGE.R - PAGE.L, 9, 'normal'), PAGE.L, 50, 9, 'normal', MID);
 
     const labels = [];
     for (const s of o.stops) if (!labels.includes(s.zoneLabel)) labels.push(s.zoneLabel);
@@ -216,16 +206,25 @@
     return y + noteHeight(lines.length);
   }
 
+  // centres are the same expressions row() uses, so every label sits exactly over its column.
+  // jsPDF's align:'center' ignores charSpace, so centred labels are positioned by hand.
+  const CENTER = { n: COL.n + 2.5, size: (COL.size + COL.qty) / 2, qty: (COL.qty + COL.tick) / 2, tick: (COL.tick + PAGE.R) / 2 };
+
   function tableHead(doc, y) {
     doc.setFillColor(INK); doc.rect(PAGE.L, y, PAGE.R - PAGE.L, HEAD_H, 'F');
-    const t = (s, x, o) => txt(doc, s, x, y + 4.7, 6.5, 'bold', 255, Object.assign({ charSpace: 0.5 }, o || {}));
-    t('#', COL.n + 2.5, { align: 'center' });
-    t('ITEM', COL.img + 1);
-    t('BIN', COL.bin);
-    t('SKU · DESCRIPTION', COL.sku);
-    t('SIZE', (COL.size + COL.qty) / 2, { align: 'center' });
-    t('QTY', (COL.qty + COL.tick) / 2, { align: 'center' });
-    t('PICK', COL.tick + 3.8, { align: 'center' });
+    const SP = 0.5;
+    const label = (s, x, centred) => {
+      font(doc, 6.5, 'bold');
+      const w = doc.getTextWidth(s) + SP * (s.length - 1);
+      txt(doc, s, centred ? x - w / 2 : x, y + 4.6, 6.5, 'bold', 255, { charSpace: SP });
+    };
+    label('#', CENTER.n, true);
+    label('ITEM', COL.img);
+    label('BIN', COL.bin);
+    label('SKU · DESCRIPTION', COL.sku);
+    label('SIZE', CENTER.size, true);
+    label('QTY', CENTER.qty, true);
+    label('PICK', CENTER.tick, true);
     return y + HEAD_H;
   }
 
@@ -256,14 +255,13 @@
     if (desc.length > 3) { desc = desc.slice(0, 3); desc[2] = fit(doc, desc[2] + '…', skuW, 8.5, 'normal'); }
     txt(doc, desc, COL.sku, y + 14, 8.5, 'normal', MID, { lineHeightFactor: 1.3 });
 
-    const sx = (COL.size + COL.qty) / 2, sz = shrink(doc, s.size || '—', COL.qty - COL.size - 2, 15, 'bold', 8);
-    txt(doc, s.size || '—', sx, mid + 2.4, sz, 'bold', INK, { align: 'center' });
+    const sz = shrink(doc, s.size || '—', COL.qty - COL.size - 2, 15, 'bold', 8);
+    txt(doc, s.size || '—', CENTER.size, mid + 2.4, sz, 'bold', INK, { align: 'center' });
 
-    const qx = (COL.qty + COL.tick) / 2;
-    txt(doc, String(s.qty), qx, mid + 2.6, 16, 'bold', INK, { align: 'center' });
-    if (s.qty > 1) { doc.setDrawColor(INK); doc.setLineWidth(0.7); doc.circle(qx, mid + 0.4, 4.6, 'S'); }
+    txt(doc, String(s.qty), CENTER.qty, mid + 2.6, 16, 'bold', INK, { align: 'center' });
+    if (s.qty > 1) { doc.setDrawColor(INK); doc.setLineWidth(0.7); doc.circle(CENTER.qty, mid + 0.4, 4.6, 'S'); }
 
-    doc.setDrawColor(INK); doc.setLineWidth(0.5); doc.rect(COL.tick + 1, mid - 3.5, 7, 7, 'S');
+    doc.setDrawColor(INK); doc.setLineWidth(0.5); doc.rect(CENTER.tick - 3.5, mid - 3.5, 7, 7, 'S');
     rule(doc, y + ROW_H, 0.2, RULE);
     return y + ROW_H;
   }

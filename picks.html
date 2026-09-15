@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Pick Waves — CourtSide</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  Pick Waves — build, save and print zone waves of online orders (see Pick Waves/PLAN.md).
+  Reads the encrypted pick pool (pick-data branch) and the wave register (waves branch) through the
+  GitHub API with a fine-grained token; decrypts in the browser with the FS_PICK_KEY passphrase.
+  Nothing customer-identifying is ever written unencrypted. Nothing is written to NetSuite or Shopify.
+  Dev: picks.html?dev=1&mem=1&pass=dev&pool=../mockups/dev-pool.enc  (LocalStore, never touches GitHub)
+-->
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0A0B0E; --surf:#131519; --surf-2:#1A1D23; --surf-3:#20242B;
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.15);
+  --ink:#F0F2F5; --ink-2:rgba(240,242,245,.68); --ink-3:rgba(240,242,245,.44);
+  --acc:#2ECC8F; --acc-soft:rgba(46,204,143,.13);
+  --blue:#5C8AE6; --blue-soft:rgba(92,138,230,.15);
+  --watch:#D9A520; --watch-soft:rgba(217,165,32,.13);
+  --late:#F0605C; --late-soft:rgba(240,96,92,.12);
+  --r:12px;
+  --mono:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace;
+  --display:"Archivo Black",Impact,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:500 14px/1.45 "Space Grotesk",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+.mono{font-family:var(--mono)}
+button,input,select{font:inherit;color:inherit}
+h2,h3{margin:0}
+
+/* buttons, chips, fields */
+.btn{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--line-2);background:var(--surf-2);cursor:pointer;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:8px;transition:background .15s,border-color .15s}
+.btn:hover{background:var(--surf-3);border-color:rgba(255,255,255,.24)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--acc);border-color:transparent;color:#05140D}
+.btn.primary:hover{background:#43D89C}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--late)}
+.btn.danger-fill{background:var(--late);border-color:transparent;color:#1A0605}
+.btn.sm{height:30px;padding:0 11px;font-size:13px;border-radius:8px}
+.btn.wide{width:100%;justify-content:center;height:42px}
+.btn kbd{font-family:var(--mono);font-size:10px;opacity:.55;border:1px solid currentColor;border-radius:4px;padding:0 4px;line-height:14px}
+.chip{height:30px;padding:0 11px;border-radius:999px;border:1px solid var(--line-2);background:transparent;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink-2)}
+.chip:hover{border-color:rgba(255,255,255,.3);color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+input[type=text],input[type=password],input[type=number],input[type=datetime-local],select{
+  width:100%;height:38px;padding:0 11px;border-radius:9px;border:1px solid var(--line-2);background:var(--surf-2);outline:none;color-scheme:dark}
+input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;background:var(--surf-3);color:var(--ink-2);white-space:nowrap}
+.pill.open{background:var(--blue-soft);color:var(--blue)}
+.pill.stale{background:var(--watch-soft);color:var(--watch)}
+.pill.done{background:var(--acc-soft);color:var(--acc)}
+.pill.released{color:var(--ink-3)}
+.pill.express{background:var(--watch-soft);color:var(--watch)}
+.pill.pickup{background:var(--blue-soft);color:var(--blue)}
+.pill.standard{color:var(--ink-3)}
+
+/* lock */
+.lock{min-height:100vh;display:grid;place-items:center;padding:24px}
+.lock-card{width:min(420px,100%);background:var(--surf);border:1px solid var(--line);border-radius:18px;padding:30px 28px 24px;display:grid;gap:14px}
+.lock-card .logo{width:44px;height:44px;filter:invert(1)}
+.lock-title{font-family:var(--display);font-size:28px;letter-spacing:-.02em;line-height:1}
+.lock-sub{font-size:10.5px;letter-spacing:.16em;color:var(--ink-3);margin-top:-8px}
+.fld{display:grid;gap:6px}
+.fld span{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.chk{display:flex;gap:8px;align-items:center;color:var(--ink-2);font-size:13px}
+.lock-err{color:var(--late);min-height:18px;font-size:13px}
+.lock-note{margin:0;color:var(--ink-3);font-size:12px}
+
+/* shell */
+.dev-bar{background:var(--watch-soft);color:var(--watch);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-align:center;padding:5px 12px}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:20px;padding:14px 24px;background:rgba(10,11,14,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}
+.brand img{width:32px;height:32px;filter:invert(1)}
+.brand .wm{font-family:var(--display);font-size:21px;letter-spacing:-.02em;line-height:1}
+.brand .sub{font-size:10px;letter-spacing:.16em;color:var(--ink-3);margin-top:3px}
+.status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);margin-left:auto}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3);flex:none}
+.dot.good{background:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.dot.watch{background:var(--watch);box-shadow:0 0 0 3px var(--watch-soft)}
+.dot.late{background:var(--late);box-shadow:0 0 0 3px var(--late-soft)}
+.actions{display:flex;gap:8px}
+.wrap{max-width:1480px;margin:0 auto;padding:20px 24px 56px;display:grid;gap:16px}
+
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.stat{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.stat .sl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.stat .sn{font-family:var(--display);font-size:36px;line-height:1.05;letter-spacing:-.03em;margin-top:6px;font-variant-numeric:tabular-nums}
+.stat .ss{color:var(--ink-2);font-size:12.5px}
+.stat.ready .sn{color:var(--acc)}
+.stat.exc .sn{color:var(--watch)}
+
+.cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;align-items:start}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.ph{display:flex;align-items:baseline;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.ph h2{font-size:15px;font-weight:700}
+.ph .meta{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-left:auto}
+.empty-note{padding:22px 16px;color:var(--ink-3)}
+
+.zrow{display:grid;grid-template-columns:minmax(0,1fr) 72px 56px 64px 44px 70px;align-items:center;gap:8px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.zrow:last-child{border-bottom:0}
+.zrow .zl{font-weight:700}
+.zrow .zn{font-family:var(--display);font-size:20px;text-align:right;font-variant-numeric:tabular-nums}
+.zrow .zn small{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-left:4px;font-weight:400}
+.zrow .zu,.zrow .zo{font-family:var(--mono);font-size:12px;color:var(--ink-2);text-align:right}
+.zrow .ze{font-family:var(--mono);font-size:11px;color:var(--watch);text-align:right}
+.zrow.empty{color:var(--ink-3)}
+.zrow.empty .zn{color:var(--ink-3)}
+.zrow .btn{justify-self:end}
+.zrow.zhead{padding-top:8px;padding-bottom:8px}
+.zrow.zhead>div{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);text-align:right}
+.zrow.zhead>div:first-child{text-align:left}
+
+.wrow{display:grid;grid-template-columns:128px minmax(0,1fr) 150px 86px 150px;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}
+.wrow:last-child{border-bottom:0}
+.wrow .wid{font-family:var(--mono);font-weight:600;font-size:13px}
+.wrow .wz b{display:block;font-weight:700}
+.wrow .wz span{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.bar{height:6px;border-radius:3px;background:var(--surf-3);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:3px}
+.wprog span{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-top:5px}
+.wact{display:flex;gap:6px;justify-content:flex-end}
+.wrow.released{opacity:.55}
+
+table.t{width:100%;border-collapse:collapse}
+table.t th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:500;text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surf)}
+table.t td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.t tr:last-child td{border-bottom:0}
+table.t .r{text-align:right}
+table.t .dim{color:var(--ink-3)}
+table.t .b{font-weight:600}
+.cont{font-family:var(--mono);font-size:11px;color:var(--watch)}
+.flag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--late);border:1px solid var(--late-soft);border-radius:4px;padding:0 4px;margin-left:4px}
+
+/* modal + dialog */
+.modal-back{position:fixed;inset:0;z-index:20;background:rgba(3,4,6,.66);backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}
+.modal{width:min(1220px,100%);height:min(860px,calc(100vh - 40px));background:var(--surf);border:1px solid var(--line-2);border-radius:16px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.mh{display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.mh h3{font-family:var(--display);font-size:22px;letter-spacing:-.02em;font-weight:400}
+.mh .meta{font-size:11px;color:var(--ink-3)}
+.x{margin-left:auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line-2);background:transparent;cursor:pointer;font-size:20px;line-height:1;color:var(--ink-2)}
+.mb{display:grid;grid-template-columns:350px minmax(0,1fr);min-height:0}
+.form{padding:16px 20px;border-right:1px solid var(--line);overflow:auto;display:grid;gap:16px;align-content:start}
+.f{display:grid;gap:7px}
+.f.two{grid-template-columns:1fr 110px;gap:10px}
+.fl{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.hint{font-size:12px;color:var(--ink-3)}
+.sort-row{display:grid;grid-template-columns:18px minmax(0,1fr) 72px;gap:6px;align-items:center;margin-bottom:6px}
+.sort-row .n{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.preview{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0}
+.pv-sum{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.pv-sum .big{font-family:var(--display);font-size:26px;letter-spacing:-.02em}
+.pv-sum .k{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.pv-sum .k.warn{color:var(--watch)}
+.pv-table{overflow:auto;min-height:0}
+.pv-empty{padding:40px 20px;color:var(--ink-3);text-align:center}
+.mf{display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--line)}
+.mf .sp{flex:1}
+.dialog{width:min(520px,100%);background:var(--surf);border:1px solid var(--line-2);border-radius:14px;padding:20px 22px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.dialog h3{font-size:18px;font-weight:700;margin-bottom:10px}
+.dlg-body{color:var(--ink-2)}
+.dlg-body p{margin:0 0 10px}
+.dlg-body ul{margin:0 0 10px;padding-left:18px;max-height:260px;overflow:auto}
+.dlg-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+.busy{position:fixed;inset:0;z-index:30;background:rgba(3,4,6,.55);display:grid;place-items:center}
+.busy-card{display:flex;gap:12px;align-items:center;background:var(--surf);border:1px solid var(--line-2);border-radius:12px;padding:14px 18px}
+.spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--acc);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
+#toasts{position:fixed;right:18px;bottom:18px;z-index:40;display:grid;gap:8px;max-width:min(440px,calc(100vw - 36px))}
+.toast{background:var(--surf-3);border:1px solid var(--line-2);border-left:3px solid var(--ink-3);border-radius:10px;padding:10px 14px;box-shadow:0 12px 30px rgba(0,0,0,.4);transition:opacity .4s,transform .4s}
+.toast.good{border-left-color:var(--acc)}
+.toast.bad{border-left-color:var(--late)}
+.toast.out{opacity:0;transform:translateY(6px)}
+
+@media (max-width:1100px){
+  .cols{grid-template-columns:1fr}
+  .mb{grid-template-columns:1fr;overflow:auto}
+  .form{border-right:0;border-bottom:1px solid var(--line)}
+  .modal{height:calc(100vh - 40px)}
+}
+@media (max-width:720px){
+  .top{padding:12px 16px}
+  .wrap{padding:16px}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wrow{grid-template-columns:1fr auto;gap:8px}
+  .wrow .wprog{grid-column:1/-1}
+  .zrow{grid-template-columns:minmax(0,1fr) 60px 70px}
+  .zrow .zu,.zrow .ze,.zrow .zo,.zhead .zu,.zhead .ze,.zhead .zo{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="lock" class="lock" hidden>
+  <form class="lock-card" id="lock-form" autocomplete="off">
+    <img class="logo" id="lock-logo" alt="">
+    <div class="lock-title">Pick Waves</div>
+    <div class="lock-sub mono">COURTSIDE · ONLINE ORDER PICKING</div>
+    <label class="fld"><span>Passphrase</span><input type="password" id="lk-pass" autocomplete="current-password" required></label>
+    <label class="fld" id="lk-token-wrap"><span>GitHub token</span><input type="password" id="lk-token" placeholder="github_pat_…" autocomplete="off"></label>
+    <label class="chk"><input type="checkbox" id="lk-remember" checked> Remember on this device</label>
+    <button class="btn primary wide" type="submit" id="lk-go">Unlock</button>
+    <div class="lock-err" id="lk-err" role="alert"></div>
+    <p class="lock-note">Both stay in this browser only. Use trusted warehouse PCs.</p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <div class="dev-bar" id="dev-bar" hidden>DEV MODE — LOCAL STORE · NOTHING IS WRITTEN TO GITHUB</div>
+  <header class="top">
+    <div class="brand"><img id="top-logo" alt=""><div><div class="wm">Pick Waves</div><div class="sub mono">ONLINE ORDERS · LOC 2</div></div></div>
+    <div class="status mono" id="status"><i class="dot" id="status-dot"></i><span id="status-t">—</span></div>
+    <div class="actions">
+      <button class="btn" id="btn-refresh" title="Reload the pool and the wave register">Refresh <kbd>R</kbd></button>
+      <button class="btn primary" id="btn-new">New wave <kbd>N</kbd></button>
+      <button class="btn ghost" id="btn-lock" title="Forget the passphrase and token on this device">Lock</button>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="stats" id="stats"></section>
+    <section class="cols">
+      <div class="panel">
+        <div class="ph"><h2>Ready to pick</h2><span class="meta">by zone · walk order</span></div>
+        <div id="zones"></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h2>Waves</h2><span class="meta" id="waves-meta">last 14 days</span></div>
+        <div id="waves"></div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="ph"><h2>Exceptions</h2><span class="meta">held out of waves</span></div>
+      <div id="exceptions"></div>
+    </section>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+<div id="busy" class="busy" hidden><div class="busy-card"><div class="spin"></div><span id="busy-t">Working…</span></div></div>
+<div id="toasts" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="pick-crypto.js"></script>
+<script src="pick-lib.js"></script>
+<script src="pick-store.js"></script>
+<script src="pick-logo.js"></script>
+<script src="pick-slip.js"></script>
+<script>
+(() => {
+'use strict';
+
+// ------------------------------------------------------------------ setup
+const REPO = 'masonbosdorf/courtside-fulfilment';
+const TZ = 'Australia/Melbourne';
+const qs = new URLSearchParams(location.search);
+const DEV = qs.has('dev');
+const CFG_KEY = DEV ? 'pw_cfg_dev' : 'pw_cfg';
+const DEFAULT_MAX = 40;
+const S = { cfg: null, store: null, Z: null, pool: null, index: { v: 1, waves: [] }, sha: null, plan: null, busy: false, builder: null };
+
+const $ = (sel, el) => (el || document).querySelector(sel);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtN = n => Number(n || 0).toLocaleString('en-AU');
+const plural = (n, w, pl) => `${fmtN(n)} ${n === 1 ? w : (pl || w + 's')}`;
+const userError = msg => Object.assign(new Error(msg), { code: 'USER' });
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) { /* private mode */ } },
+};
+const melTime = iso => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+const melDay = iso => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
+const ago = iso => {
+  const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.floor(m / 60);
+  return h < 24 ? h + ' h ago' : plural(Math.floor(h / 24), 'day') + ' ago';
+};
+const age = iso => {
+  const h = (Date.now() - Date.parse(iso)) / 36e5;
+  return h < 1 ? Math.max(1, Math.round(h * 60)) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd';
+};
+const zoneLabel = id => (S.Z.byId.get(id) || { label: id }).label;
+const typePill = t => `<span class="pill ${esc(t)}">${t === 'express' ? 'Express' : t === 'pickup' ? 'Pickup' : 'Standard'}</span>`;
+
+// ------------------------------------------------------------------ feedback
+function toast(msg, kind) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (kind || '');
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  const life = kind === 'bad' ? 8000 : 4000;
+  setTimeout(() => t.classList.add('out'), life);
+  setTimeout(() => t.remove(), life + 500);
+}
+function showBusy(text) { $('#busy-t').textContent = text; $('#busy').hidden = false; }
+function hideBusy() { $('#busy').hidden = true; }
+function reportError(e) {
+  toast(e && e.message ? e.message : String(e), 'bad');
+  if (e && e.code === 'AUTH') setTimeout(() => lock(true), 1200);
+}
+
+function dialog({ title, body, ok = 'OK', cancel = 'Cancel', danger = false }) {
+  return new Promise(resolve => {
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML = `<div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-t">
+      <h3 id="dlg-t">${esc(title)}</h3><div class="dlg-body">${body}</div>
+      <div class="dlg-foot">${cancel ? `<button class="btn" data-a="no">${esc(cancel)}</button>` : ''}
+      <button class="btn ${danger ? 'danger-fill' : 'primary'}" data-a="yes">${esc(ok)}</button></div></div>`;
+    const finish = v => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); finish(false); } };
+    back.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]');
+      if (b) finish(b.dataset.a === 'yes');
+      else if (e.target === back) finish(false);
+    });
+    document.addEventListener('keydown', onKey, true);
+    $('#modal-root').appendChild(back);
+    back.querySelector('[data-a="yes"]').focus();
+  });
+}
+
+// ------------------------------------------------------------------ data
+function makeStore(cfg) {
+  if (DEV) {
+    return PickStore.LocalStore({ poolUrl: qs.get('pool') || '../mockups/dev-pool.enc',
+      storage: qs.has('mem') ? null : localStorage, key: 'pw_dev_store' });
+  }
+  return PickStore.GitHubStore({ repo: REPO, token: cfg.token });
+}
+
+async function load() {
+  let text;
+  try { text = await S.store.getPool(); }
+  catch (e) {
+    if (e.code === 'NOT_FOUND') throw Object.assign(new Error(DEV ? e.message : 'No pick pool has been published yet — the cloud sync builds it every 5 minutes.'), { code: 'NO_POOL' });
+    throw e;
+  }
+  try { S.pool = await PickCrypto.decryptJSON(text, S.cfg.pass); }
+  catch (e) { throw Object.assign(new Error('Wrong passphrase.'), { code: 'PASS' }); }
+  const r = await S.store.getIndex();
+  S.index = r.index; S.sha = r.sha;
+  replan();
+}
+
+function replan() {
+  S.plan = PickLib.planOrders(S.pool, S.index, S.Z);
+  if (!$('#app').hidden) renderApp();
+}
+
+async function refresh(quiet) {
+  if (S.busy) return;
+  S.busy = true;
+  const btn = $('#btn-refresh');
+  btn.disabled = true;
+  try { await load(); if (!quiet) toast('Up to date', 'good'); }
+  catch (e) { if (!quiet || e.code === 'AUTH') reportError(e); }
+  finally { S.busy = false; btn.disabled = false; }
+}
+
+// choose → write the encrypted wave file (create-only) → register it under the sha we read.
+// Losing the register race means another device saved first: reload and choose again, so an
+// order another device just took can never end up in two waves.
+const bumpId = id => id.replace(/-(\d+)$/, (m, n) => '-' + String(Number(n) + 1).padStart(2, '0'));
+
+async function saveWave(opts) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await load();
+    const list = PickLib.selectWave(S.plan.ready, opts);
+    if (!list.length) throw userError('No orders match these settings any more.');
+    const now = new Date().toISOString();
+    const build = id => PickLib.buildWave(list, { id, zone: opts.zone, filters: opts.filters, sort: opts.sort, createdAt: now, Z: S.Z, poolAsOf: S.pool.asOf });
+    let built = build(PickLib.nextWaveId(S.index, now));
+    for (let k = 0; ; k++) {
+      try {
+        const enc = await PickCrypto.encryptJSON(built.slips, S.cfg.pass);
+        await S.store.putWave(built.record.id, enc, `Wave ${built.record.id} · ${built.record.zoneLabel} · ${plural(list.length, 'order')}`);
+        break;
+      } catch (e) {
+        if (e.code !== 'CONFLICT' || k >= 20) throw e;
+        built = build(bumpId(built.record.id));      // id used by an interrupted save or another device
+      }
+    }
+    const next = { v: 1, updated: now, waves: (S.index.waves || []).concat(built.record) };
+    try {
+      const r = await S.store.putIndex(next, S.sha, `Register ${built.record.id} (${plural(list.length, 'order')})`);
+      S.index = next; S.sha = r.sha;
+      replan();
+      return built;
+    } catch (e) {
+      if (e.code !== 'CONFLICT') throw e;
+    }
+  }
+  throw userError('Could not save — the register kept changing. Try again.');
+}
+
+async function printWave(id, opts) {
+  opts = opts || {};
+  showBusy(`Preparing ${id}…`);
+  try {
+    await load();
+    const w = (S.index.waves || []).find(x => x.id === id);
+    if (!w) throw userError(`${id} isn't in the register.`);
+    const slips = await PickCrypto.decryptJSON(await S.store.getWave(id), S.cfg.pass);
+    const rc = PickLib.recheck(slips, S.pool, S.index);
+    if (rc.dropped.length && !opts.capture) {
+      hideBusy();
+      const list = rc.dropped.map(d => `<li><b class="mono">#${esc(d.no)}</b> — ${esc(d.reason)}</li>`).join('');
+      const go = await dialog({
+        title: `Print ${id}`,
+        body: `<p>${plural(rc.dropped.length, 'slip')} of ${slips.orders.length} will be left out:</p><ul>${list}</ul>` +
+          (rc.orders.length ? '' : '<p>Nothing is left to print.</p>'),
+        ok: rc.orders.length ? `Print ${plural(rc.orders.length, 'slip')}` : 'OK',
+        cancel: rc.orders.length ? 'Cancel' : null,
+      });
+      if (!go || !rc.orders.length) return null;
+      showBusy(`Preparing ${id}…`);
+    }
+    if (!rc.orders.length) throw userError(`Nothing left to print in ${id}.`);
+    $('#busy-t').textContent = `Rendering ${plural(rc.orders.length, 'slip')}…`;
+    const out = Object.assign({}, slips, { orders: rc.orders });
+    const doc = await PickSlip.render(out, {});
+    const result = {
+      id, slips: rc.orders.length, pages: doc.getNumberOfPages(), dropped: rc.dropped,
+      checks: rc.orders.reduce((n, o) => n + o.stops.filter(s => s.check).length, 0),
+      fileName: PickSlip.fileName(out),
+    };
+    if (!opts.capture) {
+      doc.save(result.fileName);
+      toast(`${id}: ${plural(result.slips, 'slip')} downloaded` + (result.checks ? ` · ${plural(result.checks, 'bin')} flagged to check` : ''), 'good');
+    }
+    return result;
+  } catch (e) {
+    if (opts.capture) throw e;
+    reportError(e);
+    return null;
+  } finally {
+    hideBusy();
+  }
+}
+
+async function releaseWave(id, opts) {
+  opts = opts || {};
+  if (!opts.noConfirm) {
+    const sum = PickLib.waveSummary(S.index, S.pool).find(x => x.id === id);
+    const open = sum ? sum.orders - sum.done : 0;
+    const go = await dialog({
+      title: `Release ${id}?`,
+      body: `<p>${plural(open, 'unfulfilled order')} go${open === 1 ? 'es' : ''} back to the pool and ${open === 1 ? 'its' : 'their'} bin holds are dropped.</p><p>Bin any slips already printed for this wave.</p>`,
+      ok: 'Release wave', danger: true,
+    });
+    if (!go) return false;
+  }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const r = await S.store.getIndex();
+    const w = (r.index.waves || []).find(x => x.id === id);
+    if (!w) throw userError(`${id} isn't in the register.`);
+    if (w.releasedAt) { S.index = r.index; S.sha = r.sha; replan(); return true; }
+    const now = new Date().toISOString();
+    const next = Object.assign({}, r.index, { updated: now, waves: r.index.waves.map(x => (x.id === id ? Object.assign({}, x, { releasedAt: now }) : x)) });
+    try {
+      const p = await S.store.putIndex(next, r.sha, `Release ${id}`);
+      S.index = next; S.sha = p.sha;
+      replan();
+      if (!opts.noConfirm) toast(`${id} released`, 'good');
+      return true;
+    } catch (e) {
+      if (e.code !== 'CONFLICT') throw e;
+    }
+  }
+  throw userError('Could not release — the register kept changing. Try again.');
+}
+
+// ------------------------------------------------------------------ render: app
+function renderApp() {
+  if (!S.plan) return;
+  renderStatus();
+  renderStats();
+  renderZones();
+  renderWaves();
+  renderExceptions();
+}
+
+function renderStatus() {
+  if (!S.pool) return;
+  const mins = (Date.now() - Date.parse(S.pool.asOf)) / 60000;
+  $('#status-dot').className = 'dot ' + (mins <= 15 ? 'good' : mins <= 60 ? 'watch' : 'late');
+  $('#status-t').textContent = `Pool ${melTime(S.pool.asOf)} · ${ago(S.pool.asOf)}` + (S.pool.synthetic ? ' · synthetic' : '');
+  $('#status').title = `Orders and bin stock as of ${melDay(S.pool.asOf)} ${melTime(S.pool.asOf)} (Melbourne). The cloud sync rebuilds it every 5 minutes.`;
+}
+
+function renderStats() {
+  const P = S.plan;
+  const units = P.ready.reduce((n, o) => n + o.units, 0);
+  const exp = P.ready.filter(o => o.type === 'express').length;
+  const pick = P.ready.filter(o => o.type === 'pickup').length;
+  const openWaves = PickLib.waveSummary(S.index, S.pool).filter(w => w.state === 'open' || w.state === 'stale').length;
+  const stat = (cls, label, n, sub) => `<div class="stat ${cls}"><div class="sl mono">${label}</div><div class="sn">${fmtN(n)}</div><div class="ss">${sub}</div></div>`;
+  $('#stats').innerHTML =
+    stat('ready', 'Ready to wave', P.ready.length, `${plural(units, 'unit')} · ${exp} express · ${pick} pickup`) +
+    stat('', 'In open waves', P.waved.length, plural(openWaves, 'open wave')) +
+    stat('exc', 'Exceptions', P.exceptions.length, 'can’t be waved yet') +
+    stat('', 'Fulfilled, not shipped', P.done.length, 'NetSuite done · awaiting Shopify');
+}
+
+function renderZones() {
+  const by = new Map();
+  for (const o of S.plan.ready) {
+    const z = by.get(o.zone) || { n: 0, u: 0, exp: 0, oldest: null };
+    z.n++; z.u += o.units; if (o.type === 'express') z.exp++;
+    if (!z.oldest || o.at < z.oldest) z.oldest = o.at;
+    by.set(o.zone, z);
+  }
+  const head = `<div class="zrow zhead"><div>Zone</div><div>Orders</div><div class="zu">Units</div><div class="ze">Express</div><div class="zo">Oldest</div><div></div></div>`;
+  const rows = S.Z.zones.map(z => {
+    const d = by.get(z.id);
+    if (!d) return `<div class="zrow empty"><div class="zl">${esc(z.label)}</div><div class="zn">0</div><div class="zu"></div><div class="ze"></div><div class="zo"></div><div></div></div>`;
+    return `<div class="zrow"><div class="zl">${esc(z.label)}</div><div class="zn">${fmtN(d.n)}</div>
+      <div class="zu">${fmtN(d.u)}u</div><div class="ze">${d.exp ? d.exp + ' exp' : ''}</div>
+      <div class="zo" title="Oldest order in this zone">${age(d.oldest)}</div>
+      <button class="btn sm" data-zone="${esc(z.id)}">Wave</button></div>`;
+  }).join('');
+  $('#zones').innerHTML = head + rows;
+}
+
+function renderWaves() {
+  const list = PickLib.waveSummary(S.index, S.pool).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  $('#waves-meta').textContent = list.length ? `${plural(list.length, 'wave')} · last 14 days` : 'last 14 days';
+  if (!list.length) { $('#waves').innerHTML = '<div class="empty-note">No waves yet. Pick a zone and press <b>Wave</b>, or <b>New wave</b>.</div>'; return; }
+  $('#waves').innerHTML = list.map(w => {
+    const pct = w.orders ? Math.round((w.done / w.orders) * 100) : 0;
+    const open = w.state === 'open' || w.state === 'stale';
+    return `<div class="wrow ${w.state}">
+      <div class="wid">${esc(w.id)}</div>
+      <div class="wz"><b>${esc(w.zoneLabel)}</b><span>${melDay(w.createdAt) === melDay(new Date().toISOString()) ? 'Today' : melDay(w.createdAt).replace(/^\w+,?\s*/, '')} ${melTime(w.createdAt)} · ${plural(w.orders, 'order')} · ${fmtN(w.units)}u</span></div>
+      <div class="wprog"><div class="bar"><i style="width:${pct}%"></i></div><span>${w.done}/${w.orders} fulfilled</span></div>
+      <span class="pill ${w.state}">${w.state}</span>
+      <div class="wact">${w.state !== 'released' ? `<button class="btn sm" data-print="${esc(w.id)}">Print</button>` : ''}${open ? `<button class="btn sm ghost danger" data-release="${esc(w.id)}">Release</button>` : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderExceptions() {
+  const ex = S.plan.exceptions;
+  if (!ex.length) { $('#exceptions').innerHTML = '<div class="empty-note">None — every open order can be waved.</div>'; return; }
+  $('#exceptions').innerHTML = `<table class="t"><thead><tr><th>Order</th><th>Type</th><th>Ordered</th><th>Reason</th></tr></thead><tbody>` +
+    ex.map(o => `<tr><td class="mono b">#${esc(o.no)}</td><td>${typePill(o.type)}</td><td class="mono dim">${age(o.at)}</td><td>${esc(o.reason)}</td></tr>`).join('') +
+    '</tbody></table>';
+}
+
+// ------------------------------------------------------------------ render: builder
+const CHIP_SETS = {
+  ship: [['standard', 'Standard'], ['express', 'Express'], ['pickup', 'Pickup']],
+  cls: [['fw', 'Footwear'], ['app', 'Apparel'], ['acc', 'Accessories'], ['mixed', 'Mixed']],
+  units: [['1', '1 unit'], ['2-3', '2–3'], ['4+', '4+']],
+};
+
+function openBuilder(zone) {
+  if (S.builder) closeBuilder();
+  const first = S.Z.zones.find(z => S.plan.ready.some(o => o.zone === z.id));
+  const B = {
+    zone: zone || (first ? first.id : S.Z.zones[0].id),
+    filters: { ship: [], cls: [], units: [], states: [], dateTo: '', sku: '' },
+    sort: [{ key: 'stop', dir: 'asc' }, { key: '', dir: 'asc' }, { key: '', dir: 'asc' }],
+    max: DEFAULT_MAX,
+  };
+  const counts = new Map();
+  for (const o of S.plan.ready) counts.set(o.zone, (counts.get(o.zone) || 0) + 1);
+  const states = [...S.plan.ready.reduce((m, o) => (o.state ? m.set(o.state, (m.get(o.state) || 0) + 1) : m), new Map())]
+    .sort((a, b) => b[1] - a[1]).map(([s]) => [s, s]);
+  const chips = (field, set) => set.map(([v, l]) => `<button type="button" class="chip" data-f="${field}" data-v="${esc(v)}" aria-pressed="false">${esc(l)}</button>`).join('');
+  const sortOptions = sel => `<option value="">— none —</option>` + Object.entries(PickLib.SORT_LABELS).map(([k, l]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="b-title">
+    <div class="mh"><h3 id="b-title">New wave</h3><span class="meta mono">pool ${melTime(S.pool.asOf)} · ${ago(S.pool.asOf)}</span><button class="x" data-close aria-label="Close">×</button></div>
+    <div class="mb">
+      <aside class="form">
+        <div class="f"><label class="fl" for="b-zone">Zone</label>
+          <select id="b-zone">${S.Z.zones.map(z => `<option value="${esc(z.id)}"${z.id === B.zone ? ' selected' : ''}>${esc(z.label)} — ${counts.get(z.id) || 0} ready</option>`).join('')}</select></div>
+        <div class="f"><label class="fl" for="b-date">Ordered up to</label><input type="datetime-local" id="b-date"><div class="hint">Blank = every open order</div></div>
+        <div class="f"><span class="fl">Delivery</span><div class="chips">${chips('ship', CHIP_SETS.ship)}</div></div>
+        <div class="f"><span class="fl">Class</span><div class="chips">${chips('cls', CHIP_SETS.cls)}</div></div>
+        <div class="f"><span class="fl">Units per order</span><div class="chips">${chips('units', CHIP_SETS.units)}</div></div>
+        ${states.length ? `<div class="f"><span class="fl">Ship-to state</span><div class="chips">${chips('states', states)}</div></div>` : ''}
+        <div class="f two"><div class="f"><label class="fl" for="b-sku">SKU contains</label><input type="text" id="b-sku" placeholder="e.g. IQ8249" autocomplete="off"></div>
+          <div class="f"><label class="fl" for="b-max">Max orders</label><input type="number" id="b-max" min="1" max="999" value="${DEFAULT_MAX}"></div></div>
+        <div class="f"><span class="fl">Slip order</span>
+          ${B.sort.map((s, i) => `<div class="sort-row"><span class="n">${i + 1}</span><select data-sort="${i}" aria-label="Sort level ${i + 1}">${sortOptions(s.key)}</select><button type="button" class="btn sm" data-dir="${i}">Asc</button></div>`).join('')}
+          <div class="hint">Walk order and order date always break ties.</div></div>
+        <div class="hint">A chip group with nothing selected means “all”.</div>
+      </aside>
+      <section class="preview"><div class="pv-sum" id="b-sum"></div><div class="pv-table" id="b-list"></div></section>
+    </div>
+    <div class="mf"><span class="hint mono">Esc to close</span><div class="sp"></div>
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn" id="b-save">Save for later</button>
+      <button class="btn primary" id="b-print">Save &amp; print</button></div>
+  </div>`;
+
+  const m = back.querySelector('.modal');
+  const update = () => updatePreview(B);
+  back.addEventListener('click', e => {
+    if (e.target === back || e.target.closest('[data-close]')) return closeBuilder();
+    const chip = e.target.closest('.chip');
+    if (chip) {
+      const arr = B.filters[chip.dataset.f], v = chip.dataset.v, i = arr.indexOf(v);
+      i >= 0 ? arr.splice(i, 1) : arr.push(v);
+      chip.setAttribute('aria-pressed', String(i < 0));
+      return update();
+    }
+    const dir = e.target.closest('[data-dir]');
+    if (dir) {
+      const s = B.sort[Number(dir.dataset.dir)];
+      s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+      dir.textContent = s.dir === 'asc' ? 'Asc' : 'Desc';
+      return update();
+    }
+    if (e.target.id === 'b-save') return submitBuilder(B, false);
+    if (e.target.id === 'b-print') return submitBuilder(B, true);
+  });
+  m.addEventListener('input', e => {
+    if (e.target.id === 'b-zone') B.zone = e.target.value;
+    else if (e.target.id === 'b-date') B.filters.dateTo = e.target.value;
+    else if (e.target.id === 'b-sku') B.filters.sku = e.target.value;
+    else if (e.target.id === 'b-max') B.max = Math.max(0, parseInt(e.target.value, 10) || 0);
+    else if (e.target.dataset.sort != null) B.sort[Number(e.target.dataset.sort)].key = e.target.value;
+    update();
+  });
+  B.el = back;
+  S.builder = B;
+  $('#modal-root').appendChild(back);
+  update();
+  back.querySelector('#b-zone').focus();
+}
+
+function closeBuilder() {
+  if (!S.builder) return;
+  S.builder.el.remove();
+  S.builder = null;
+}
+
+function builderOpts(B) {
+  return {
+    zone: B.zone,
+    filters: {
+      ship: B.filters.ship.slice(), cls: B.filters.cls.slice(), units: B.filters.units.slice(), states: B.filters.states.slice(),
+      sku: B.filters.sku.trim(), dateTo: B.filters.dateTo ? new Date(B.filters.dateTo).toISOString() : '',
+    },
+    sort: B.sort.filter(s => s.key).map(s => ({ key: s.key, dir: s.dir })),
+    max: B.max > 0 ? B.max : 0,
+  };
+}
+
+function updatePreview(B) {
+  const opts = builderOpts(B);
+  const all = PickLib.filterOrders(S.plan.ready, Object.assign({}, opts.filters, { zone: opts.zone }));
+  const list = PickLib.selectWave(S.plan.ready, opts);
+  const units = list.reduce((n, o) => n + o.units, 0);
+  const cont = list.filter(o => o.zones.length > 1).length;
+  const sf = list.filter(o => o.lastResort).length;
+  const exp = list.filter(o => o.type === 'express').length;
+  const pick = list.filter(o => o.type === 'pickup').length;
+  const k = (t, warn) => `<span class="k${warn ? ' warn' : ''}">${t}</span>`;
+  B.el.querySelector('#b-sum').innerHTML =
+    `<span class="big">${plural(list.length, 'order')}</span>` + k(plural(units, 'unit')) +
+    (all.length > list.length ? k(`${all.length - list.length} more match — max ${opts.max}`, true) : '') +
+    (exp ? k(`${exp} express`) : '') + (pick ? k(`${pick} pickup`) : '') +
+    (cont ? k(`${plural(cont, 'order')} continue to another zone`, true) : '') +
+    (sf ? k(`${sf} use the Sales Floor bin`, true) : '');
+  B.el.querySelector('#b-list').innerHTML = list.length
+    ? `<table class="t"><thead><tr><th>#</th><th>Order</th><th>Type</th><th>First bin</th><th>Route</th><th class="r">Units</th><th>Ordered</th><th>State</th></tr></thead><tbody>` +
+      list.map((o, i) => `<tr><td class="mono dim">${i + 1}</td><td class="mono b">#${esc(o.no)}</td><td>${typePill(o.type)}</td>
+        <td class="mono">${esc(o.stops[0].bin)}</td>
+        <td>${plural(o.stops.length, 'stop')}${o.zones.length > 1 ? ` <span class="cont">→ ${esc(o.zones.slice(1).map(zoneLabel).join(', '))}</span>` : ''}${o.lastResort ? '<span class="flag">SF BIN</span>' : ''}</td>
+        <td class="mono r">${o.units}</td><td class="mono dim" title="${esc(melDay(o.at) + ' ' + melTime(o.at))}">${age(o.at)}</td><td class="mono dim">${esc(o.state || '—')}</td></tr>`).join('') +
+      '</tbody></table>'
+    : `<div class="pv-empty">No ready orders in ${esc(zoneLabel(opts.zone))} match these settings.</div>`;
+  B.el.querySelector('#b-save').disabled = !list.length;
+  B.el.querySelector('#b-print').disabled = !list.length;
+}
+
+async function submitBuilder(B, print) {
+  const opts = builderOpts(B);
+  const planned = PickLib.selectWave(S.plan.ready, opts).map(o => o.no);
+  const buttons = [B.el.querySelector('#b-save'), B.el.querySelector('#b-print')];
+  buttons.forEach(b => { b.disabled = true; });
+  showBusy('Saving wave…');
+  try {
+    const built = await saveWave(opts);
+    hideBusy();
+    closeBuilder();
+    const got = new Set(built.record.orders.map(o => o.no));
+    const lost = planned.filter(n => !got.has(n)).length;
+    toast(`Saved ${built.record.id} — ${plural(built.record.count, 'order')}` + (lost ? ` (${lost} changed while saving)` : ''), 'good');
+    if (print) await printWave(built.record.id);
+  } catch (e) {
+    hideBusy();
+    reportError(e);
+    if (S.builder === B) { replan(); updatePreview(B); }
+  }
+}
+
+// ------------------------------------------------------------------ lock / boot
+function showLock(message) {
+  $('#app').hidden = true;
+  $('#lock').hidden = false;
+  $('#lk-token-wrap').hidden = DEV;
+  $('#lk-token').required = !DEV;
+  $('#lk-err').textContent = message || '';
+  const saved = store.get(CFG_KEY);
+  if (saved && saved.token && !DEV) $('#lk-token').value = saved.token;
+  $('#lk-pass').focus();
+}
+
+function showApp() {
+  $('#lock').hidden = true;
+  $('#app').hidden = false;
+  $('#dev-bar').hidden = !DEV;
+  renderApp();
+}
+
+async function unlock(cfg, remember) {
+  S.cfg = cfg;
+  S.store = makeStore(cfg);
+  await load();
+  if (remember) store.set(CFG_KEY, cfg);
+  showApp();
+}
+
+function lock(keepToken) {
+  const saved = store.get(CFG_KEY);
+  store.del(CFG_KEY);
+  if (keepToken && saved && saved.token) store.set(CFG_KEY, { token: saved.token });
+  location.reload();
+}
+
+$('#lock-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const go = $('#lk-go');
+  go.disabled = true; go.textContent = 'Unlocking…'; $('#lk-err').textContent = '';
+  try {
+    await unlock({ pass: $('#lk-pass').value, token: DEV ? '' : $('#lk-token').value.trim() }, $('#lk-remember').checked);
+  } catch (err) {
+    $('#lk-err').textContent = err.message;
+  } finally {
+    go.disabled = false; go.textContent = 'Unlock';
+  }
+});
+
+$('#btn-refresh').addEventListener('click', () => refresh(false));
+$('#btn-new').addEventListener('click', () => openBuilder());
+$('#btn-lock').addEventListener('click', async () => {
+  if (await dialog({ title: 'Lock this device?', body: '<p>The passphrase and GitHub token are forgotten on this browser. You will need both to unlock again.</p>', ok: 'Lock', danger: true })) lock(false);
+});
+$('#zones').addEventListener('click', e => { const b = e.target.closest('[data-zone]'); if (b) openBuilder(b.dataset.zone); });
+$('#waves').addEventListener('click', async e => {
+  const p = e.target.closest('[data-print]');
+  if (p) return printWave(p.dataset.print);
+  const r = e.target.closest('[data-release]');
+  if (r) { try { await releaseWave(r.dataset.release); } catch (err) { reportError(err); } }
+});
+document.addEventListener('keydown', e => {
+  if ($('#app').hidden || S.builder || $('#modal-root').children.length || e.metaKey || e.ctrlKey || e.altKey) {
+    if (e.key === 'Escape' && S.builder && !$('#modal-root .dialog')) closeBuilder();
+    return;
+  }
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openBuilder(); }
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); refresh(false); }
+});
+setInterval(() => { if (!$('#app').hidden) renderStatus(); }, 30000);
+setInterval(() => { if (!$('#app').hidden && !document.hidden && !S.builder && !$('#modal-root').children.length) refresh(true); }, 120000);
+
+async function boot() {
+  const logo = window.PICK_LOGO || '';
+  $('#lock-logo').src = logo; $('#top-logo').src = logo;
+  try {
+    S.Z = PickLib.compileZones(await (await fetch('zones.json', { cache: 'no-store' })).json());
+  } catch (e) {
+    showLock('Could not load zones.json — reload the page.');
+    return;
+  }
+  const saved = DEV && qs.get('pass') ? { pass: qs.get('pass'), token: '' } : store.get(CFG_KEY);
+  if (saved && saved.pass) {
+    try { await unlock(saved, false); }
+    catch (e) { showLock(e.code === 'PASS' ? 'Saved passphrase no longer works — enter it again.' : e.message); }
+  } else {
+    showLock();
+  }
+  if (DEV && qs.has('selftest') && !$('#app').hidden) {
+    const s = document.createElement('script');
+    s.src = 'tests/picks-selftest.js';
+    document.body.appendChild(s);
+  }
+}
+
+window.App = { S, load, refresh, saveWave, printWave, releaseWave, openBuilder, closeBuilder, renderApp, PickLib };
+boot();
+})();
+</script>
+</body>
+</html>
