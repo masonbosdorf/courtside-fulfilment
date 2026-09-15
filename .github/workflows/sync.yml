@@ -57,6 +57,30 @@ jobs:
         if: steps.shopify.outcome != 'success' && steps.netsuite.outcome != 'success'
         run: echo "both Shopify and NetSuite failed" && exit 1
 
+      # Pick Waves: build the ENCRYPTED pick pool (orders + addresses + Loc 2 bins) and write the
+      # no-PII wave progress into seed.waves. Never allowed to break the kiosk data.
+      - name: Pick pool (Pick Waves)
+        id: pickpool
+        continue-on-error: true
+        env:
+          FS_PICK_KEY:              ${{ secrets.FS_PICK_KEY }}
+          FS_SHOPIFY_DOMAIN:        ${{ secrets.FS_SHOPIFY_DOMAIN }}
+          FS_SHOPIFY_CLIENT_ID:     ${{ secrets.FS_SHOPIFY_CLIENT_ID }}
+          FS_SHOPIFY_CLIENT_SECRET: ${{ secrets.FS_SHOPIFY_CLIENT_SECRET }}
+          FS_ACCOUNT:               ${{ secrets.FS_ACCOUNT }}
+          FS_CONSUMER_KEY:          ${{ secrets.FS_CONSUMER_KEY }}
+          FS_CONSUMER_SECRET:       ${{ secrets.FS_CONSUMER_SECRET }}
+          FS_TOKEN_ID:              ${{ secrets.FS_TOKEN_ID }}
+          FS_TOKEN_SECRET:          ${{ secrets.FS_TOKEN_SECRET }}
+        run: |
+          IDX="$RUNNER_TEMP/waves-index.json"
+          if git fetch -q --depth 1 origin waves && git show FETCH_HEAD:waves/index.json > "$IDX"; then
+            echo "wave register: $(wc -c < "$IDX") bytes"
+          else
+            echo '{"v":1,"waves":[]}' > "$IDX"; echo "no wave register yet"
+          fi
+          node pick-fetch.js "$RUNNER_TEMP/pick-pool.enc" --waves "$IDX" --seed "$GITHUB_WORKSPACE/fulfilment-seed.js"
+
       - name: Stamp asOf (Melbourne)
         run: node gh-stamp-asof.js "$GITHUB_WORKSPACE/fulfilment-seed.js"
 
@@ -75,3 +99,21 @@ jobs:
               echo "push race — retrying ($i)"; sleep 2
             done
           fi
+
+      # One orphan commit, force-pushed: the pick-data branch only ever holds the latest pool, so the
+      # repo doesn't grow and superseded ciphertext isn't kept in history. Built with plumbing so the
+      # main checkout is untouched.
+      - name: Publish pick pool (force-push pick-data)
+        if: steps.pickpool.outcome == 'success'
+        continue-on-error: true
+        run: |
+          git config user.name  "fulfilment-bot"
+          git config user.email "fulfilment-bot@users.noreply.github.com"
+          printf '%s\n' "# pick-data — encrypted pick pool (do not merge)" "" \
+            "Force-pushed by sync.yml (pick-fetch.js) on every run. AES-GCM, key = FS_PICK_KEY." > "$RUNNER_TEMP/pick-data-README.md"
+          POOL=$(git hash-object -w "$RUNNER_TEMP/pick-pool.enc")
+          README=$(git hash-object -w "$RUNNER_TEMP/pick-data-README.md")
+          TREE=$(printf '100644 blob %s\tREADME.md\n100644 blob %s\tpick-pool.enc\n' "$README" "$POOL" | git mktree)
+          COMMIT=$(git commit-tree "$TREE" -m "pool $(TZ=Australia/Melbourne date +'%d-%m %H:%M') [cloud]")
+          git push -q --force origin "$COMMIT:refs/heads/pick-data"
+          echo "pick-data -> $COMMIT ($(wc -c < "$RUNNER_TEMP/pick-pool.enc") bytes encrypted)"
