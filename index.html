@@ -793,7 +793,8 @@ function ordSummary(r, items, exp, pick){
   if(pick) out+=pill(pick,'Pickup','pick');
   return out;
 }
-// the expanded order: #no · customer · date, every line as SKU/description/qty, then unit + $ + shipping totals
+// the expanded order: #no · date, every line as SKU/description/qty, then unit + $ + shipping totals
+// (customer names were removed from the public seed 15 Sep 2026; the span only renders for an old seed)
 function renderOrdDetail(){
   const box=ordOverlay && ordOverlay.querySelector('#ord-det'); if(!box) return;
   ordOverlay.querySelectorAll('.ord-no').forEach((c,k)=>c.classList.toggle('sel', k===ordSel));
@@ -809,7 +810,7 @@ function renderOrdDetail(){
   const cls=o.t==='express'?' exp':o.t==='pickup'?' pick':'';
   box.innerHTML='<div class="ord-det">'+
     '<div class="ord-det-head"><span class="ord-det-no">#'+ordEsc(o.n)+'</span>'+
-      '<span class="ord-det-cust">'+ordEsc(o.c||'—')+'</span>'+
+      '<span class="ord-det-cust">'+(o.c?ordEsc(o.c):'')+'</span>'+
       '<span class="ord-det-when">'+ordEsc(ordWhen(o.at))+'</span></div>'+
     body+
     '<div class="ord-det-foot">'+

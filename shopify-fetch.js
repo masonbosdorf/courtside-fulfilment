@@ -39,11 +39,12 @@ async function main() {
   // per-order detail carried through to the seed so the dashboard can expand an order number
   // into its lines (SKU / description / qty) + totals + shipping method. Keys are short on
   // purpose — this list is ~40 orders deep and ships inside fulfilment-seed.js.
+  // NO customer names/addresses here: the seed is served from a PUBLIC repo. Pick slips get
+  // their PII from pick-fetch.js, encrypted.
   // FOOTWEAR / APPAREL / ACCESSORIES live as uppercase product tags in Shopify
   const CAT = tags => { const t = new Set((tags || []).map(x => String(x).toUpperCase()));
     return t.has('FOOTWEAR') ? 'fw' : t.has('APPAREL') ? 'app' : t.has('ACCESSORIES') ? 'acc' : 'oth'; };
   const detailOf = n => ({
-    cust: (n.customer && n.customer.displayName) || (n.shippingAddress && n.shippingAddress.name) || '',
     value: Number((n.totalPriceSet && n.totalPriceSet.shopMoney && n.totalPriceSet.shopMoney.amount) || 0),
     ship: (n.shippingLine && n.shippingLine.title) || '',
     items: (n.lineItems.nodes || [])
@@ -51,7 +52,7 @@ async function main() {
       .map(l => ({ k: l.sku || '', d: l.title || '', q: l.quantity || 0,
                    g: CAT(l.product && l.product.tags) })),
   });
-  const DETAIL_SEL = 'totalPriceSet{shopMoney{amount}} customer{displayName} shippingAddress{name} shippingLine{title}';
+  const DETAIL_SEL = 'totalPriceSet{shopMoney{amount}} shippingLine{title}';
   const LINE_SEL   = 'lineItems(first:100){nodes{sku title quantity product{tags}}}';
 
   // 1. orders in today + same-day-last-week (same elapsed); plus today's total units

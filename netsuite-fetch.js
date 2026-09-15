@@ -80,7 +80,6 @@ async function main(){
         units: Number((o && o.units) || 0),
         createdAt: o && o.createdAt,
         t: (o && o.t) || 'standard',
-        cust: (o && o.cust) || '',
         value: Number((o && o.value) || 0),
         ship: (o && o.ship) || '',
         items: (o && Array.isArray(o.items)) ? o.items : [],
@@ -108,9 +107,10 @@ async function main(){
           const key = keyFmt.format(d);
           if (!byDate[key]) byDate[key] = { key, label: lblFmt.format(d), orders: 0, units: 0, nos: [] };
           byDate[key].orders++; byDate[key].units += r.units;
-          // {number, type} + expandable detail: customer, created-at, $ total, units, shipping, lines
+          // {number, type} + expandable detail: created-at, $ total, units, shipping, lines
+          // (no customer name — this seed is public)
           if (r.ref) byDate[key].nos.push({ n: r.ref.replace(/^#/, ''), t: r.t || 'standard',
-            c: r.cust, v: r.value, u: r.units, s: r.ship, at: r.createdAt, i: r.items });
+            v: r.value, u: r.units, s: r.ship, at: r.createdAt, i: r.items });
         }
         unfulfilledByDate = Object.values(byDate).sort((a, b) => a.key.localeCompare(b.key));
         for (const g of unfulfilledByDate) g.nos.sort((a, b) => (parseInt(a.n, 10) || 0) - (parseInt(b.n, 10) || 0)); // order numbers ascending
