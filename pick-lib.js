@@ -5,8 +5,9 @@
      pool   decrypted pick pool  {asOf, orders:[order], bins:{sku:[[bin, onhand], …]}}
      order  {no, at, type:'standard'|'express'|'pickup', method, state, so:{id,tranid}|null, ifDone,
              hold, pickupReady, shipTo, billTo, note, attrs, lines:[{sku, qty, desc, size, cls, parent}]}
-     index  waves/index.json     {v, waves:[{id, createdAt, zone, filters, sort, count, units,
-                                   orders:[{no, lines:[[sku, bin, qty], …]}], releasedAt}]}
+     index  waves/index.json     {v, waves:[{id, name, picker, createdAt, zone, filters, sort,
+                                   count, units, orders:[{no, lines:[[sku, bin, qty], …]}],
+                                   releasedAt}]}   ← PUBLIC file: name/picker only, never a customer
      Z      compileZones(zones.json)
 
    Rules (see Pick Waves/PLAN.md §3)
@@ -219,6 +220,36 @@
   const unitBucket = u => (u <= 1 ? '1' : u <= 3 ? '2-3' : '4+');
   const has = (arr, v) => !arr || !arr.length || arr.includes(v);
 
+  // ---------------------------------------------------------------- customer names
+  // Names live ONLY in the encrypted pool (order.shipTo / billTo). Nothing here may be written
+  // into waves/index.json — that file is public. Search and filtering happen in the browser
+  // against the decrypted pool.
+  const fold = s => String(s == null ? '' : s).normalize('NFD')
+    .replace(/[̀-ͯ]/g, '').toLowerCase();
+  const words = s => fold(s).split(/[^a-z0-9]+/).filter(Boolean);
+
+  function nameWords(o) {
+    const out = new Set();
+    for (const a of [o && o.shipTo, o && o.billTo]) {
+      if (!a) continue;
+      for (const part of [a.name, a.company]) for (const w of words(part)) out.add(w);
+    }
+    return [...out];
+  }
+
+  // the name to show in a list: ship-to first, then bill-to, then either company
+  const custName = o => (o && o.shipTo && o.shipTo.name) || (o && o.billTo && o.billTo.name) ||
+    (o && o.shipTo && o.shipTo.company) || (o && o.billTo && o.billTo.company) || '';
+
+  // every query word must appear inside some name word, so "yuhe" and "chen yu" both find
+  // Yuhe Chen, and a surname-only query works the same as a first name
+  function matchCustomer(o, q) {
+    const qs = words(q);
+    if (!qs.length) return true;
+    const ws = nameWords(o);
+    return qs.every(t => ws.some(w => w.includes(t)));
+  }
+
   function filterOrders(ready, f) {
     f = f || {};
     const to = f.dateTo ? Date.parse(f.dateTo) : null;
@@ -230,7 +261,8 @@
       has(f.states, o.state || '') &&
       has(f.cls, o.cls) &&
       has(f.units, unitBucket(o.units)) &&
-      (!sku || o.stops.some(s => String(s.sku).toUpperCase().includes(sku))));
+      (!sku || o.stops.some(s => String(s.sku).toUpperCase().includes(sku))) &&
+      (!f.cust || matchCustomer(o, f.cust)));
   }
 
   const SORTS = {
@@ -280,20 +312,29 @@
     return pre + String(n + 1).padStart(2, '0');
   }
 
+  // A wave name and a picker DO go in the public register, so they are trimmed and capped.
+  // The UI warns not to type customer details into the name.
+  const MAX_NAME = 40, MAX_PICKER = 24;
+  const tidy = (s, max) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max);
+  const cleanLabel = s => tidy(s, MAX_NAME);
+  const cleanPicker = s => tidy(s, MAX_PICKER);
+
   // record → waves/index.json (no PII) · slips → encrypted waves/<id>.enc
   function buildWave(list, opts) {
     const z = opts.Z && opts.Z.byId.get(opts.zone);
     const zoneLabel = opts.zone === ALL ? ALL_LABEL : z ? z.label : opts.zone;
     const units = list.reduce((n, o) => n + o.units, 0);
     const record = {
-      id: opts.id, createdAt: opts.createdAt, zone: opts.zone, zoneLabel,
+      id: opts.id, name: cleanLabel(opts.name), picker: cleanPicker(opts.picker),
+      createdAt: opts.createdAt, zone: opts.zone, zoneLabel,
       filters: opts.filters || {}, sort: opts.sort || [], poolAsOf: opts.poolAsOf || null,
       count: list.length, units,
       orders: list.map(o => ({ no: o.no, lines: o.stops.map(s => [s.sku, s.bin, s.qty]) })),
       releasedAt: null,
     };
     const slips = {
-      v: 1, id: opts.id, zone: opts.zone, zoneLabel, createdAt: opts.createdAt, count: list.length, units,
+      v: 1, id: opts.id, name: cleanLabel(opts.name), picker: cleanPicker(opts.picker),
+      zone: opts.zone, zoneLabel, createdAt: opts.createdAt, count: list.length, units,
       orders: list.map((o, i) => ({
         seq: i + 1, no: o.no, at: o.at, type: o.type, method: o.method || '',
         so: o.so ? o.so.tranid : '', state: o.state || '',
@@ -355,14 +396,43 @@
           : done === nos.length ? 'done'
           : t - Date.parse(w.createdAt) > 2 * DAY ? 'stale'
           : 'open';
-        return { id: w.id, zone: w.zone, zoneLabel: w.zoneLabel || w.zone, createdAt: w.createdAt,
+        return { id: w.id, name: w.name || '', picker: w.picker || '',
+                 zone: w.zone, zoneLabel: w.zoneLabel || w.zone, createdAt: w.createdAt,
                  orders: nos.length, units: w.units || 0, done, state };
       });
+  }
+
+  // "who has this order?" — order number or customer name across every bucket
+  function searchOrders(plan, q, index) {
+    const raw = String(q == null ? '' : q).trim();
+    if (!raw || !plan) return [];
+    const no = raw.replace(/^#/, '').toLowerCase();
+    const hitNo = o => no.length >= 2 && String(o.no).toLowerCase().includes(no);
+    const byId = new Map(((index && index.waves) || []).map(w => [w.id, w]));
+    const out = [];
+    const add = (o, status, wave) => {
+      const w = wave ? byId.get(wave) : null;
+      out.push({
+        no: o.no, at: o.at, type: o.type, state: o.state || '',
+        units: o.units != null ? o.units : (o.lines || []).reduce((n, l) => n + (l.qty || 0), 0),
+        cust: custName(o), status, wave: wave || '', waveName: (w && w.name) || '',
+        picker: (w && w.picker) || '', reason: o.reason || '', zone: o.zone || '',
+      });
+    };
+    const pick = (list, status, waveOf) => {
+      for (const o of list || []) if (hitNo(o) || matchCustomer(o, raw)) add(o, status, waveOf ? waveOf(o) : '');
+    };
+    pick(plan.ready, 'ready');
+    pick(plan.waved, 'waved', o => o.wave);
+    pick(plan.exceptions, 'exception');
+    pick(plan.done, 'done');
+    return out;
   }
 
   return {
     compileZones, zoneOf, walkKey, reservations, stockMap, allocate, planOrders,
     filterOrders, sortOrders, selectWave, SORT_LABELS, unitBucket, ALL, ALL_LABEL,
     nextWaveId, buildWave, recheck, waveSummary,
+    custName, matchCustomer, searchOrders, cleanLabel, cleanPicker, MAX_NAME, MAX_PICKER,
   };
 });

@@ -230,3 +230,87 @@ test('crypto: round-trip, wrong passphrase rejected, nothing readable in the env
   const again = await encryptJSON(secret, 'correct horse battery staple');
   assert.notEqual(again, enc);                                  // fresh salt + IV every time
 });
+
+test('customer names: first or last name, company, accents, blank query', () => {
+  const o = order('1', [['X', 1]], { shipTo: { name: 'Yuhe Chen' }, billTo: { name: 'Zoë Ng', company: 'Hoops Pty Ltd' } });
+  assert.equal(L.custName(o), 'Yuhe Chen');
+  for (const q of ['YUHE', 'yuhe', 'chen', 'Chen Yuhe', 'yu', 'zoe', 'ZOE NG', 'hoops', 'ltd'])
+    assert.equal(L.matchCustomer(o, q), true, `should match ${q}`);
+  for (const q of ['yuhi', 'chenx', 'smith', 'yuhe smith'])
+    assert.equal(L.matchCustomer(o, q), false, `should not match ${q}`);
+  assert.equal(L.matchCustomer(o, '   '), true);                 // blank = no filter
+  assert.equal(L.custName(order('2', [['X', 1]], { shipTo: null, billTo: null })), '');
+  assert.equal(L.custName(order('3', [['X', 1]], { shipTo: { name: '', company: 'Hoops' }, billTo: null })), 'Hoops');
+});
+
+test('customer filter narrows a wave to matching names', () => {
+  const bins = { X: [['A-001-01', 9]] };
+  const ready = L.planOrders(pool([
+    order('1', [['X', 1]], { shipTo: { name: 'Yuhe Chen' } }),
+    order('2', [['X', 1]], { shipTo: { name: 'Mason Bosdorf' } }),
+    order('3', [['X', 1]], { shipTo: { name: 'Chen Wei' } }),
+  ], bins), null, Z).ready;
+  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: 'chen' } }).map(o => o.no), ['1', '3']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: 'yuhe' } }).map(o => o.no), ['1']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: '' } }).map(o => o.no), ['1', '2', '3']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: 'nobody' } }), []);
+});
+
+test('wave name and picker: trimmed, capped, and still no customer data in the register', () => {
+  const ready = L.planOrders(pool([order('1', [['X', 1]], { shipTo: { name: 'Yuhe Chen' } })], { X: [['A-001-01', 1]] }), null, Z).ready;
+  const base = { zone: 'A1', createdAt: '2026-09-16T03:00:00Z', Z };
+  const { record, slips } = L.buildWave(ready, Object.assign({}, base, { id: 'W-260916-01', name: '  Morning   run  ', picker: '  Nick  ' }));
+  assert.equal(record.name, 'Morning run');
+  assert.equal(record.picker, 'Nick');
+  assert.equal(slips.name, 'Morning run');
+  assert.equal(slips.picker, 'Nick');
+  assert.equal(JSON.stringify(record).includes('Yuhe'), false);       // public register stays PII-free
+  assert.equal(slips.orders[0].shipTo.name, 'Yuhe Chen');             // encrypted slips still carry it
+
+  const long = L.buildWave(ready, Object.assign({}, base, { id: 'W-2', name: 'y'.repeat(80), picker: 'p'.repeat(60) }));
+  assert.equal(long.record.name.length, L.MAX_NAME);
+  assert.equal(long.record.picker.length, L.MAX_PICKER);
+
+  const none = L.buildWave(ready, Object.assign({}, base, { id: 'W-3' }));
+  assert.equal(none.record.name, '');
+  assert.equal(none.record.picker, '');
+});
+
+test('waveSummary carries name and picker, blank for waves saved before the feature', () => {
+  const p = pool([order('1', [['X', 1]])], {});
+  const s = L.waveSummary({ waves: [
+    { id: 'W-260916-01', name: 'Express first', picker: 'Nick', zone: 'A1', zoneLabel: 'A-001–025',
+      createdAt: '2026-09-16T03:00:00Z', units: 1, orders: [{ no: '1', lines: [] }], releasedAt: null },
+    { id: 'W-260916-02', zone: 'A2', createdAt: '2026-09-16T03:00:00Z', units: 1,
+      orders: [{ no: '1', lines: [] }], releasedAt: null },
+  ] }, p, '2026-09-16T04:00:00Z');
+  assert.deepEqual(s.map(x => [x.id, x.name, x.picker]), [['W-260916-01', 'Express first', 'Nick'], ['W-260916-02', '', '']]);
+});
+
+test('searchOrders finds an order by name or number and says where it is', () => {
+  const bins = { X: [['A-001-01', 9]] };
+  const orders = [
+    order('55084', [['X', 1]], { shipTo: { name: 'Yuhe Chen' } }),
+    order('55085', [['X', 1]], { shipTo: { name: 'Mason Bosdorf' } }),
+    order('55086', [['X', 1]], { shipTo: { name: 'Chen Wei' }, so: null }),
+    order('55087', [['X', 1]], { shipTo: { name: 'Anna Chen' }, ifDone: true }),
+  ];
+  const index = { waves: [{ id: 'W-260916-01', name: 'Morning run', picker: 'Nick',
+    createdAt: '2026-09-16T03:00:00Z', units: 1,
+    orders: [{ no: '55085', lines: [['X', 'A-001-01', 1]] }], releasedAt: null }] };
+  const plan = L.planOrders(pool(orders, bins), index, Z);
+
+  const rows = L.searchOrders(plan, 'chen', index);
+  assert.deepEqual(rows.map(r => [r.no, r.status]), [['55084', 'ready'], ['55086', 'exception'], ['55087', 'done']]);
+  assert.equal(rows[0].cust, 'Yuhe Chen');
+  assert.equal(rows[1].reason, 'Not in NetSuite yet');
+
+  const mason = L.searchOrders(plan, 'mason', index)[0];
+  assert.deepEqual([mason.status, mason.wave, mason.waveName, mason.picker], ['waved', 'W-260916-01', 'Morning run', 'Nick']);
+
+  assert.deepEqual(L.searchOrders(plan, '#55084', index).map(r => r.no), ['55084']);
+  assert.deepEqual(L.searchOrders(plan, '5508', index).map(r => r.no).sort(), ['55084', '55085', '55086', '55087']);
+  assert.deepEqual(L.searchOrders(plan, '', index), []);
+  assert.deepEqual(L.searchOrders(plan, '  ', index), []);
+  assert.deepEqual(L.searchOrders(null, 'chen', index), []);
+});

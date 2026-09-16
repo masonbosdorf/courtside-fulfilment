@@ -135,7 +135,7 @@ input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px soli
 .zrow.zhead>div{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);text-align:right}
 .zrow.zhead>div:first-child{text-align:left}
 
-.wrow{display:grid;grid-template-columns:128px minmax(0,1fr) 150px 86px 150px;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}
+.wrow{display:grid;grid-template-columns:150px minmax(0,1fr) 118px 76px 206px;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line)}
 .wrow:last-child{border-bottom:0}
 .wrow .wid{font-family:var(--mono);font-weight:600;font-size:13px}
 .wrow .wz b{display:block;font-weight:700}
@@ -145,6 +145,23 @@ input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px soli
 .wprog span{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-top:5px}
 .wact{display:flex;gap:6px;justify-content:flex-end}
 .wrow.released{opacity:.55}
+.wrow .wid{display:grid;gap:2px}
+.lnk{background:none;border:0;padding:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink-2);font-family:"Space Grotesk",system-ui,sans-serif;font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lnk:hover{color:var(--ink);text-decoration:underline}
+.lnk.none{color:var(--ink-3);font-weight:500}
+.wname{font-family:"Space Grotesk",system-ui,sans-serif;font-weight:700;font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn.who{max-width:140px;overflow:hidden}
+.btn.who.none{color:var(--ink-3);font-weight:500}
+.who-txt{font-family:var(--mono);font-size:11px;color:var(--ink-2);align-self:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* find */
+.find{position:relative;width:min(300px,42vw)}
+.find input{height:34px;padding:0 32px 0 11px}
+.find .x2{position:absolute;right:4px;top:3px;width:28px;height:28px;border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:17px;line-height:1;border-radius:7px}
+.find .x2:hover{color:var(--ink);background:var(--surf-3)}
+.f.half{grid-template-columns:1fr 1fr}
+.warn-note{color:var(--watch);font-size:12px}
+@media (max-width:720px){.find{width:100%;order:3}}
 
 table.t{width:100%;border-collapse:collapse}
 table.t th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:500;text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surf)}
@@ -251,6 +268,10 @@ table.t .b{font-weight:600}
   <div class="dev-bar" id="dev-bar" hidden>DEV MODE — LOCAL STORE · NOTHING IS WRITTEN TO GITHUB</div>
   <header class="top">
     <div class="brand"><img id="top-logo" alt=""><div><div class="wm">Pick Waves</div><div class="sub mono">ONLINE ORDERS · LOC 2</div></div></div>
+    <div class="find">
+      <input type="text" id="q" placeholder="Find order or customer…" autocomplete="off" aria-label="Find an order by number or customer name">
+      <button class="x2" id="q-clear" type="button" aria-label="Clear search" hidden>×</button>
+    </div>
     <div class="status mono" id="status"><i class="dot" id="status-dot"></i><span id="status-t">—</span></div>
     <div class="actions">
       <button class="btn" id="btn-refresh" title="Reload the pool and the wave register">Refresh <kbd>R</kbd></button>
@@ -259,6 +280,10 @@ table.t .b{font-weight:600}
     </div>
   </header>
   <main class="wrap">
+    <section class="panel" id="find-panel" hidden>
+      <div class="ph"><h2>Search</h2><span class="meta" id="find-meta"></span></div>
+      <div id="find-results"></div>
+    </section>
     <section class="stats" id="stats"></section>
     <section class="cols">
       <div class="panel">
@@ -364,6 +389,92 @@ function dialog({ title, body, ok = 'OK', cancel = 'Cancel', danger = false }) {
   });
 }
 
+// one short line of text — used to name a wave and to assign its picker
+function promptDialog({ title, label, value, ok = 'Save', max = 40, hint = '', note = '', list = [] }) {
+  return new Promise(resolve => {
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pd-t">
+      <h3 id="pd-t">${esc(title)}</h3>
+      <div class="dlg-body"><div class="f"><label class="fl" for="pd-in">${esc(label)}</label>
+        <input type="text" id="pd-in" maxlength="${Number(max)}" value="${esc(value || '')}" autocomplete="off"${list.length ? ' list="pd-list"' : ''}>
+        ${list.length ? `<datalist id="pd-list">${list.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>` : ''}
+        ${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
+        ${note ? `<div class="warn-note">${esc(note)}</div>` : ''}</div></div>
+      <div class="dlg-foot"><button class="btn" data-a="no">Cancel</button>
+        <button class="btn primary" data-a="yes">${esc(ok)}</button></div></div>`;
+    const input = () => back.querySelector('#pd-in');
+    const finish = v => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = e => {
+      if (e.key === 'Escape') { e.stopPropagation(); finish(null); }
+      else if (e.key === 'Enter' && e.target === input()) { e.preventDefault(); finish(input().value); }
+    };
+    back.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]');
+      if (b) finish(b.dataset.a === 'yes' ? input().value : null);
+      else if (e.target === back) finish(null);
+    });
+    document.addEventListener('keydown', onKey, true);
+    $('#modal-root').appendChild(back);
+    input().focus();
+    input().select();
+  });
+}
+
+// pickers already used, so the same spelling comes back next time
+const knownPickers = () => [...new Set((S.index.waves || []).map(w => w.picker).filter(Boolean))].sort();
+
+// patch one wave in the register under the sha we read — same lock as releaseWave
+async function setWaveFields(id, patch, message) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const r = await S.store.getIndex();
+    const w = (r.index.waves || []).find(x => x.id === id);
+    if (!w) throw userError(`${id} isn't in the register.`);
+    const now = new Date().toISOString();
+    const next = Object.assign({}, r.index, { updated: now,
+      waves: r.index.waves.map(x => (x.id === id ? Object.assign({}, x, patch) : x)) });
+    try {
+      const p = await S.store.putIndex(next, r.sha, message);
+      S.index = next; S.sha = p.sha;
+      replan();
+      return true;
+    } catch (e) {
+      if (e.code !== 'CONFLICT') throw e;
+    }
+  }
+  throw userError('Could not save — the register kept changing. Try again.');
+}
+
+async function renameWave(id) {
+  const cur = (S.index.waves || []).find(w => w.id === id) || {};
+  const v = await promptDialog({
+    title: `Name ${id}`, label: 'Wave name', value: cur.name || '', max: PickLib.MAX_NAME,
+    hint: 'Anything that helps on the floor — “Morning run”, “Express only”, “Bay A bulk”.',
+    note: 'Shown on the public dashboard — no customer names.',
+  });
+  if (v === null) return;
+  const name = PickLib.cleanLabel(v);
+  try {
+    await setWaveFields(id, { name }, `${id} name ${name || '(cleared)'}`);
+    toast(name ? `${id} is now “${name}”` : `${id} name cleared`, 'good');
+  } catch (e) { reportError(e); }
+}
+
+async function assignPicker(id) {
+  const cur = (S.index.waves || []).find(w => w.id === id) || {};
+  const v = await promptDialog({
+    title: `Picker for ${id}`, label: 'Picker', value: cur.picker || '', max: PickLib.MAX_PICKER,
+    hint: 'Whoever is walking this wave. Printed on every slip in the wave.',
+    note: 'Shown on the public dashboard — first name is plenty.', list: knownPickers(),
+  });
+  if (v === null) return;
+  const picker = PickLib.cleanPicker(v);
+  try {
+    await setWaveFields(id, { picker }, `${id} picker ${picker || '(cleared)'}`);
+    toast(picker ? `${id} → ${picker}` : `${id} picker cleared`, 'good');
+  } catch (e) { reportError(e); }
+}
+
 // ------------------------------------------------------------------ data
 function makeStore(cfg) {
   if (DEV) {
@@ -413,7 +524,8 @@ async function saveWave(opts) {
     const list = PickLib.selectWave(S.plan.ready, opts);
     if (!list.length) throw userError('No orders match these settings any more.');
     const now = new Date().toISOString();
-    const build = id => PickLib.buildWave(list, { id, zone: opts.zone, filters: opts.filters, sort: opts.sort, createdAt: now, Z: S.Z, poolAsOf: S.pool.asOf });
+    const build = id => PickLib.buildWave(list, { id, zone: opts.zone, filters: opts.filters, sort: opts.sort,
+      name: opts.name, picker: opts.picker, createdAt: now, Z: S.Z, poolAsOf: S.pool.asOf });
     let built = build(PickLib.nextWaveId(S.index, now));
     for (let k = 0; ; k++) {
       try {
@@ -462,7 +574,10 @@ async function printWave(id, opts) {
     }
     if (!rc.orders.length) throw userError(`Nothing left to print in ${id}.`);
     $('#busy-t').textContent = `Rendering ${plural(rc.orders.length, 'slip')}…`;
-    const out = Object.assign({}, slips, { orders: rc.orders });
+    // The register owns the name and the picker: both can be changed after the wave was saved,
+    // while the encrypted slips file still holds whatever they were at save time. Print the
+    // current values, so assigning a picker to an open wave shows up on its slips.
+    const out = Object.assign({}, slips, { orders: rc.orders, name: w.name || '', picker: w.picker || '' });
     const doc = await PickSlip.render(out, {});
     const result = {
       id, slips: rc.orders.length, pages: doc.getNumberOfPages(), dropped: rc.dropped,
@@ -523,6 +638,34 @@ function renderApp() {
   renderZones();
   renderWaves();
   renderExceptions();
+  renderFind();
+}
+
+// search across every bucket: ready, in a wave, exception, fulfilled
+function renderFind() {
+  const q = $('#q').value.trim();
+  $('#q-clear').hidden = !q;
+  const panel = $('#find-panel');
+  if (!q || !S.plan) { panel.hidden = true; $('#find-results').innerHTML = ''; return; }
+  const rows = PickLib.searchOrders(S.plan, q, S.index);
+  panel.hidden = false;
+  $('#find-meta').textContent = rows.length ? `${plural(rows.length, 'order')} · “${q}”` : `no match · “${q}”`;
+  if (!rows.length) {
+    $('#find-results').innerHTML = `<div class="empty-note">Nothing open matches <b>${esc(q)}</b>. Shipped and cancelled orders leave the pool, so an order that is already out the door won’t be here.</div>`;
+    return;
+  }
+  const LABEL = { ready: 'Ready', waved: 'In wave', exception: 'Exception', done: 'Fulfilled' };
+  const PILL = { ready: 'done', waved: 'open', exception: 'stale', done: 'released' };
+  const where = r => r.status === 'waved'
+      ? `<b class="mono">${esc(r.wave)}</b>${r.waveName ? ' · ' + esc(r.waveName) : ''}${r.picker ? ' · picked by ' + esc(r.picker) : ''}`
+    : r.status === 'ready' ? `Ready to wave · ${esc(zoneLabel(r.zone))}`
+    : r.status === 'exception' ? esc(r.reason || 'Held out of waves')
+    : 'Done in NetSuite · awaiting Shopify';
+  $('#find-results').innerHTML = `<table class="t"><thead><tr><th>Order</th><th>Customer</th><th>Type</th><th class="r">Units</th><th>Ordered</th><th>Status</th><th>Where</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td class="mono b">#${esc(r.no)}</td><td>${esc(r.cust || '—')}</td><td>${typePill(r.type)}</td>
+      <td class="mono r">${fmtN(r.units)}</td><td class="mono dim" title="${esc(melDay(r.at) + ' ' + melTime(r.at))}">${age(r.at)}</td>
+      <td><span class="pill ${PILL[r.status]}">${LABEL[r.status]}</span></td><td>${where(r)}</td></tr>`).join('') +
+    '</tbody></table>';
 }
 
 function renderStatus() {
@@ -581,12 +724,19 @@ function renderWaves() {
   $('#waves').innerHTML = list.map(w => {
     const pct = w.orders ? Math.round((w.done / w.orders) * 100) : 0;
     const open = w.state === 'open' || w.state === 'stale';
+    const released = w.state === 'released';
+    const nameCell = released
+      ? (w.name ? `<span class="wname">${esc(w.name)}</span>` : '')
+      : `<button class="lnk${w.name ? '' : ' none'}" data-rename="${esc(w.id)}" title="Name this wave">${w.name ? esc(w.name) : '+ name'}</button>`;
+    const who = released
+      ? (w.picker ? `<span class="who-txt">${esc(w.picker)}</span>` : '')
+      : `<button class="btn sm who${w.picker ? '' : ' none'}" data-picker="${esc(w.id)}" title="Assign a picker">${w.picker ? esc(w.picker) : 'Assign'}</button>`;
     return `<div class="wrow ${w.state}">
-      <div class="wid">${esc(w.id)}</div>
+      <div class="wid"><span>${esc(w.id)}</span>${nameCell}</div>
       <div class="wz"><b>${esc(w.zoneLabel)}</b><span>${melDay(w.createdAt) === melDay(new Date().toISOString()) ? 'Today' : melDay(w.createdAt).replace(/^\w+,?\s*/, '')} ${melTime(w.createdAt)} · ${plural(w.orders, 'order')} · ${fmtN(w.units)}u</span></div>
       <div class="wprog"><div class="bar"><i style="width:${pct}%"></i></div><span>${w.done}/${w.orders} fulfilled</span></div>
       <span class="pill ${w.state}">${w.state}</span>
-      <div class="wact">${w.state !== 'released' ? `<button class="btn sm" data-print="${esc(w.id)}">Print</button>` : ''}${open ? `<button class="btn sm ghost danger" data-release="${esc(w.id)}">Release</button>` : ''}</div>
+      <div class="wact">${who}${w.state !== 'released' ? `<button class="btn sm" data-print="${esc(w.id)}">Print</button>` : ''}${open ? `<button class="btn sm ghost danger" data-release="${esc(w.id)}">Release</button>` : ''}</div>
     </div>`;
   }).join('');
 }
@@ -611,7 +761,8 @@ function openBuilder(zone) {
   const first = S.Z.zones.find(z => S.plan.ready.some(o => o.zone === z.id));
   const B = {
     zone: zone || (first ? first.id : S.Z.zones[0].id),
-    filters: { ship: [], cls: [], units: [], states: [], dateTo: '', sku: '' },
+    name: '', picker: '',
+    filters: { ship: [], cls: [], units: [], states: [], dateTo: '', sku: '', cust: '' },
     sort: [{ key: 'stop', dir: 'asc' }, { key: '', dir: 'asc' }, { key: '', dir: 'asc' }],
     max: DEFAULT_MAX,
   };
@@ -621,6 +772,7 @@ function openBuilder(zone) {
     .sort((a, b) => b[1] - a[1]).map(([s]) => [s, s]);
   const chips = (field, set) => set.map(([v, l]) => `<button type="button" class="chip" data-f="${field}" data-v="${esc(v)}" aria-pressed="false">${esc(l)}</button>`).join('');
   const sortOptions = sel => `<option value="">— none —</option>` + Object.entries(PickLib.SORT_LABELS).map(([k, l]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  const pickers = knownPickers();
 
   const back = document.createElement('div');
   back.className = 'modal-back';
@@ -628,6 +780,12 @@ function openBuilder(zone) {
     <div class="mh"><h3 id="b-title">New wave</h3><span class="meta mono">pool ${melTime(S.pool.asOf)} · ${ago(S.pool.asOf)}</span><button class="x" data-close aria-label="Close">×</button></div>
     <div class="mb">
       <aside class="form">
+        <div class="f half"><div class="f"><label class="fl" for="b-name">Wave name</label>
+            <input type="text" id="b-name" maxlength="${PickLib.MAX_NAME}" placeholder="e.g. Morning run" autocomplete="off"></div>
+          <div class="f"><label class="fl" for="b-picker">Picker</label>
+            <input type="text" id="b-picker" maxlength="${PickLib.MAX_PICKER}" placeholder="Name" autocomplete="off" list="b-pickers">
+            ${pickers.length ? `<datalist id="b-pickers">${pickers.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>` : ''}</div></div>
+        <div class="hint">Both are optional, both show on the public dashboard — no customer names.</div>
         <div class="f"><label class="fl" for="b-zone">Zone</label>
           <select id="b-zone"><option value="${PickLib.ALL}"${B.zone === PickLib.ALL ? ' selected' : ''}>All zones — ${S.plan.ready.length} ready</option>${S.Z.zones.map(z => `<option value="${esc(z.id)}"${z.id === B.zone ? ' selected' : ''}>${esc(z.label)} — ${counts.get(z.id) || 0} ready</option>`).join('')}</select></div>
         <div class="f"><label class="fl" for="b-date">Ordered up to</label><input type="datetime-local" id="b-date"><div class="hint">Blank = every open order</div></div>
@@ -637,6 +795,8 @@ function openBuilder(zone) {
         ${states.length ? `<div class="f"><span class="fl">Ship-to state</span><div class="chips">${chips('states', states)}</div></div>` : ''}
         <div class="f two"><div class="f"><label class="fl" for="b-sku">SKU contains</label><input type="text" id="b-sku" placeholder="e.g. IQ8249" autocomplete="off"></div>
           <div class="f"><label class="fl" for="b-max">Max orders</label><input type="number" id="b-max" min="1" max="999" value="${DEFAULT_MAX}"></div></div>
+        <div class="f"><label class="fl" for="b-cust">Customer</label><input type="text" id="b-cust" placeholder="e.g. YUHE" autocomplete="off">
+          <div class="hint">Part of a first or last name.</div></div>
         <div class="f"><span class="fl">Slip order</span>
           ${B.sort.map((s, i) => `<div class="sort-row"><span class="n">${i + 1}</span><select data-sort="${i}" aria-label="Sort level ${i + 1}">${sortOptions(s.key)}</select><button type="button" class="btn sm" data-dir="${i}">Asc</button></div>`).join('')}
           <div class="hint">Walk order and order date always break ties.</div></div>
@@ -675,6 +835,9 @@ function openBuilder(zone) {
     if (e.target.id === 'b-zone') B.zone = e.target.value;
     else if (e.target.id === 'b-date') B.filters.dateTo = e.target.value;
     else if (e.target.id === 'b-sku') B.filters.sku = e.target.value;
+    else if (e.target.id === 'b-cust') B.filters.cust = e.target.value;
+    else if (e.target.id === 'b-name') B.name = e.target.value;
+    else if (e.target.id === 'b-picker') B.picker = e.target.value;
     else if (e.target.id === 'b-max') B.max = Math.max(0, parseInt(e.target.value, 10) || 0);
     else if (e.target.dataset.sort != null) B.sort[Number(e.target.dataset.sort)].key = e.target.value;
     update();
@@ -697,8 +860,10 @@ function builderOpts(B) {
     zone: B.zone,
     filters: {
       ship: B.filters.ship.slice(), cls: B.filters.cls.slice(), units: B.filters.units.slice(), states: B.filters.states.slice(),
-      sku: B.filters.sku.trim(), dateTo: B.filters.dateTo ? new Date(B.filters.dateTo).toISOString() : '',
+      sku: B.filters.sku.trim(), cust: B.filters.cust.trim(),
+      dateTo: B.filters.dateTo ? new Date(B.filters.dateTo).toISOString() : '',
     },
+    name: PickLib.cleanLabel(B.name), picker: PickLib.cleanPicker(B.picker),
     sort: B.sort.filter(s => s.key).map(s => ({ key: s.key, dir: s.dir })),
     max: B.max > 0 ? B.max : 0,
   };
@@ -721,8 +886,9 @@ function updatePreview(B) {
     (cont ? k(`${plural(cont, 'order')} continue to another zone`, true) : '') +
     (sf ? k(`${sf} use the Sales Floor bin`, true) : '');
   B.el.querySelector('#b-list').innerHTML = list.length
-    ? `<table class="t"><thead><tr><th>#</th><th>Order</th><th>Type</th><th>First bin</th><th>Route</th><th class="r">Units</th><th>Ordered</th><th>State</th></tr></thead><tbody>` +
-      list.map((o, i) => `<tr><td class="mono dim">${i + 1}</td><td class="mono b">#${esc(o.no)}</td><td>${typePill(o.type)}</td>
+    ? `<table class="t"><thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Type</th><th>First bin</th><th>Route</th><th class="r">Units</th><th>Ordered</th><th>State</th></tr></thead><tbody>` +
+      list.map((o, i) => `<tr><td class="mono dim">${i + 1}</td><td class="mono b">#${esc(o.no)}</td>
+        <td>${esc(PickLib.custName(o) || '—')}</td><td>${typePill(o.type)}</td>
         <td class="mono">${esc(o.stops[0].bin)}</td>
         <td>${plural(o.stops.length, 'stop')}${o.zones.length > 1 ? ` <span class="cont">→ ${esc(o.zones.slice(1).map(zoneLabel).join(', '))}</span>` : ''}${o.lastResort ? '<span class="flag">SF BIN</span>' : ''}</td>
         <td class="mono r">${o.units}</td><td class="mono dim" title="${esc(melDay(o.at) + ' ' + melTime(o.at))}">${age(o.at)}</td><td class="mono dim">${esc(o.state || '—')}</td></tr>`).join('') +
@@ -868,9 +1034,19 @@ $('#zones').addEventListener('click', e => { const b = e.target.closest('[data-z
 $('#waves').addEventListener('click', async e => {
   const p = e.target.closest('[data-print]');
   if (p) return printWave(p.dataset.print);
+  const n = e.target.closest('[data-rename]');
+  if (n) return renameWave(n.dataset.rename);
+  const k = e.target.closest('[data-picker]');
+  if (k) return assignPicker(k.dataset.picker);
   const r = e.target.closest('[data-release]');
   if (r) { try { await releaseWave(r.dataset.release); } catch (err) { reportError(err); } }
 });
+let findTimer = null;
+$('#q').addEventListener('input', () => { clearTimeout(findTimer); findTimer = setTimeout(renderFind, 120); });
+$('#q').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.stopPropagation(); $('#q').value = ''; renderFind(); $('#q').blur(); }
+});
+$('#q-clear').addEventListener('click', () => { $('#q').value = ''; renderFind(); $('#q').focus(); });
 document.addEventListener('keydown', e => {
   if ($('#app').hidden || S.builder || $('#modal-root').children.length || e.metaKey || e.ctrlKey || e.altKey) {
     if (e.key === 'Escape' && S.builder && !$('#modal-root .dialog')) closeBuilder();
@@ -879,6 +1055,7 @@ document.addEventListener('keydown', e => {
   if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
   if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openBuilder(); }
   if (e.key === 'r' || e.key === 'R') { e.preventDefault(); refresh(false); }
+  if (e.key === '/') { e.preventDefault(); $('#q').focus(); $('#q').select(); }
 });
 setInterval(() => { if (!$('#app').hidden) renderStatus(); }, 30000);
 setInterval(() => { if (!$('#app').hidden && !document.hidden && !S.builder && !$('#modal-root').children.length) refresh(true); }, 120000);
@@ -907,7 +1084,8 @@ async function boot() {
   }
 }
 
-window.App = { S, load, refresh, saveWave, printWave, releaseWave, openBuilder, closeBuilder, renderApp, PickLib };
+window.App = { S, load, refresh, saveWave, printWave, releaseWave, openBuilder, closeBuilder,
+  renderApp, renderFind, renameWave, assignPicker, setWaveFields, PickLib };
 boot();
 })();
 </script>

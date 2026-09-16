@@ -131,8 +131,9 @@
     txt(doc, 'CourtSide', tx, 16.3, 12, 'bold', INK);
     txt(doc, 'ONLINE ORDER PICK SLIP', tx, 21, 6.5, 'bold', MID, { charSpace: 0.6 });
     txt(doc, slips.id, PAGE.R, 16.3, 15, 'bold', INK, { align: 'right' });
-    txt(doc, `${pad2(o.seq)} / ${pad2(slips.count)}   ·   ${slips.zoneLabel || slips.zone || ''}`,
-      PAGE.R, 21, 8.5, 'normal', MID, { align: 'right' });
+    const sub = `${pad2(o.seq)} / ${pad2(slips.count)}   ·   ${slips.zoneLabel || slips.zone || ''}` +
+      (slips.name ? '   ·   ' + slips.name : '');
+    txt(doc, fit(doc, sub, PAGE.R - tx - 30, 8.5, 'normal'), PAGE.R, 21, 8.5, 'normal', MID, { align: 'right' });
     rule(doc, 26, 0.6, INK);
   }
 
@@ -278,6 +279,8 @@
     rule(doc, 275, 0.4, INK);
     txt(doc, 'PICKED BY', PAGE.L, 283, 6.5, 'bold', MID, { charSpace: 0.5 });
     rule(doc, 283.6, 0.3, MID, PAGE.L + 17, PAGE.L + 60);
+    // the wave's assigned picker, printed on the line so the slip says who it belongs to
+    if (slips.picker) txt(doc, fit(doc, slips.picker, 40, 9, 'bold'), PAGE.L + 18.5, 282.6, 9, 'bold', INK);
     txt(doc, 'PACKED BY', PAGE.L + 66, 283, 6.5, 'bold', MID, { charSpace: 0.5 });
     rule(doc, 283.6, 0.3, MID, PAGE.L + 83, PAGE.L + 126);
     txt(doc, `${plural(o.stops.length, 'stop')}   ·   ${plural(o.units, 'unit')}`, PAGE.R, 283, 9, 'bold', INK, { align: 'right' });
@@ -321,8 +324,10 @@
   }
 
   function fileName(slips) {
-    const z = String(slips.zoneLabel || slips.zone || '').replace(/[\\/:*?"<>|]/g, '-');
-    return `${slips.id} · ${z} · ${plural(slips.count, 'order')}.pdf`;
+    const safe = s => String(s == null ? '' : s).replace(/[\\/:*?"<>|]/g, '-').trim();
+    const z = safe(slips.zoneLabel || slips.zone);
+    const n = safe(slips.name);
+    return `${slips.id}${n ? ' · ' + n : ''} · ${z} · ${plural(slips.count, 'order')}.pdf`;
   }
 
   root.PickSlip = { render, fileName, thumbFile, pageCount };
