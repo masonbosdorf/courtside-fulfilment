@@ -152,7 +152,11 @@ input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px soli
 .wname{font-family:"Space Grotesk",system-ui,sans-serif;font-weight:700;font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn.who{max-width:140px;overflow:hidden}
 .btn.who.none{color:var(--ink-3);font-weight:500}
-.who-txt{font-family:var(--mono);font-size:11px;color:var(--ink-2);align-self:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who-txt{font-family:var(--mono);font-size:11px;color:var(--ink-2);align-self:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px}
+.ph-lnk{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--ink-3);text-transform:uppercase}
+.ph-lnk:hover{color:var(--ink)}
+.wrow.arch{opacity:.62}
+.wrow.arch:hover{opacity:1}
 
 /* find */
 .find{position:relative;width:min(300px,42vw)}
@@ -291,7 +295,7 @@ table.t .b{font-weight:600}
         <div id="zones"></div>
       </div>
       <div class="panel">
-        <div class="ph"><h2>Waves</h2><span class="meta" id="waves-meta">last 14 days</span></div>
+        <div class="ph"><h2>Waves</h2><button class="lnk ph-lnk" id="arch-toggle" type="button" hidden></button><span class="meta" id="waves-meta">last 14 days</span></div>
         <div id="waves"></div>
       </div>
     </section>
@@ -323,7 +327,8 @@ const qs = new URLSearchParams(location.search);
 const DEV = qs.has('dev');
 const CFG_KEY = DEV ? 'pw_cfg_dev' : 'pw_cfg';
 const DEFAULT_MAX = 40;
-const S = { cfg: null, store: null, Z: null, pool: null, index: { v: 1, waves: [] }, sha: null, plan: null, busy: false, builder: null };
+const S = { cfg: null, store: null, Z: null, pool: null, index: { v: 1, waves: [] }, sha: null, plan: null, busy: false, builder: null, showArchived: false };
+const ARCHIVE_DAYS = 3650;        // the archived view is history, not the 14-day board
 
 const $ = (sel, el) => (el || document).querySelector(sel);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -458,6 +463,72 @@ async function renameWave(id) {
     await setWaveFields(id, { name }, `${id} name ${name || '(cleared)'}`);
     toast(name ? `${id} is now “${name}”` : `${id} name cleared`, 'good');
   } catch (e) { reportError(e); }
+}
+
+// Archive is only offered on done/released waves, which hold no stock, so clearing one off the
+// board can never hide a live reservation. The record stays in the register.
+async function archiveWave(id) {
+  const sum = PickLib.waveSummary(S.index, S.pool, null, ARCHIVE_DAYS).find(x => x.id === id);
+  if (!sum) return false;
+  // The button is hidden for open waves, but enforce it here too: an open wave still holds its
+  // orders and their bin units, and archiving would hide that hold from the board.
+  if (sum.state !== 'done' && sum.state !== 'released') {
+    toast(`${id} still has ${plural(sum.orders - sum.done, 'order')} to fulfil — release it first, then archive.`, 'bad');
+    return false;
+  }
+  try {
+    await setWaveFields(id, { archivedAt: new Date().toISOString() }, `Archive ${id}`);
+    toast(`${id} archived — see Archived`, 'good');
+    return true;
+  } catch (e) { reportError(e); return false; }
+}
+
+async function restoreWave(id) {
+  try {
+    await setWaveFields(id, { archivedAt: null }, `Restore ${id}`);
+    toast(`${id} back on the board`, 'good');
+  } catch (e) { reportError(e); }
+}
+
+// permanent: drops the register entry, then the encrypted slips file
+async function deleteWave(id) {
+  const w = (S.index.waves || []).find(x => x.id === id);
+  if (!w) return;
+  const nos = (w.orders || []).length;
+  const live = !w.releasedAt;
+  const go = await dialog({
+    title: `Delete ${id} for good?`,
+    body: `<p>The wave record and its encrypted slip file are removed. <b>This cannot be undone.</b></p>` +
+      (live ? `<p>${plural(nos, 'order')} in it go back to the pool and their bin holds are dropped.</p>` : '') +
+      `<p>Bin any slips already printed for it.</p>`,
+    ok: 'Delete for ever', danger: true,
+  });
+  if (!go) return;
+  showBusy(`Deleting ${id}…`);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const r = await S.store.getIndex();
+      const now = new Date().toISOString();
+      const next = Object.assign({}, r.index, { updated: now, waves: (r.index.waves || []).filter(x => x.id !== id) });
+      try {
+        const p = await S.store.putIndex(next, r.sha, `Delete ${id}`);
+        S.index = next; S.sha = p.sha;
+        break;
+      } catch (e) {
+        if (e.code !== 'CONFLICT' || attempt >= 4) throw e;
+      }
+    }
+    // the register is what the board reads, so a failed file delete still leaves the wave gone
+    let fileGone = true;
+    try { await S.store.delWave(id, `Delete wave ${id} slips`); } catch (e) { fileGone = false; }
+    replan();
+    if (fileGone) toast(`${id} deleted`, 'good');
+    else toast(`${id} removed from the board, but its slip file could not be deleted — try again or remove it in GitHub.`, 'bad');
+  } catch (e) {
+    reportError(e);
+  } finally {
+    hideBusy();
+  }
 }
 
 async function assignPicker(id) {
@@ -718,25 +789,51 @@ function renderZones() {
 }
 
 function renderWaves() {
-  const list = PickLib.waveSummary(S.index, S.pool).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  $('#waves-meta').textContent = list.length ? `${plural(list.length, 'wave')} · last 14 days` : 'last 14 days';
-  if (!list.length) { $('#waves').innerHTML = '<div class="empty-note">No waves yet. Pick a zone and press <b>Wave</b>, or <b>New wave</b>.</div>'; return; }
+  // the board shows the last 14 days; the archived view is the full history
+  const all = PickLib.waveSummary(S.index, S.pool, null, S.showArchived ? ARCHIVE_DAYS : 14)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const active = all.filter(w => !w.archived);
+  const archived = all.filter(w => w.archived);
+  const list = S.showArchived ? archived : active;
+
+  const toggle = $('#arch-toggle');
+  toggle.hidden = !archived.length && !S.showArchived;
+  toggle.textContent = S.showArchived ? '← Active' : `Archived (${archived.length})`;
+  $('#waves-meta').textContent = S.showArchived
+    ? (archived.length ? `${plural(archived.length, 'wave')} · archived` : 'archived')
+    : (active.length ? `${plural(active.length, 'wave')} · last 14 days` : 'last 14 days');
+
+  if (!list.length) {
+    $('#waves').innerHTML = S.showArchived
+      ? '<div class="empty-note">Nothing archived. A wave can be archived once it is done or released — the record is kept, it just leaves the board.</div>'
+      : archived.length
+        ? `<div class="empty-note">No active waves — ${plural(archived.length, 'wave')} archived. Open <b>Archived</b> above to see ${archived.length === 1 ? 'it' : 'them'}.</div>`
+        : '<div class="empty-note">No waves yet. Pick a zone and press <b>Wave</b>, or <b>New wave</b>.</div>';
+    return;
+  }
   $('#waves').innerHTML = list.map(w => {
     const pct = w.orders ? Math.round((w.done / w.orders) * 100) : 0;
     const open = w.state === 'open' || w.state === 'stale';
     const released = w.state === 'released';
-    const nameCell = released
+    const finished = w.state === 'done' || released;      // holds nothing → safe to archive
+    const locked = w.archived || released;                // no renaming or reassigning from here
+    const nameCell = locked
       ? (w.name ? `<span class="wname">${esc(w.name)}</span>` : '')
       : `<button class="lnk${w.name ? '' : ' none'}" data-rename="${esc(w.id)}" title="Name this wave">${w.name ? esc(w.name) : '+ name'}</button>`;
-    const who = released
+    const who = locked
       ? (w.picker ? `<span class="who-txt">${esc(w.picker)}</span>` : '')
       : `<button class="btn sm who${w.picker ? '' : ' none'}" data-picker="${esc(w.id)}" title="Assign a picker">${w.picker ? esc(w.picker) : 'Assign'}</button>`;
-    return `<div class="wrow ${w.state}">
+    return `<div class="wrow ${w.state}${w.archived ? ' arch' : ''}">
       <div class="wid"><span>${esc(w.id)}</span>${nameCell}</div>
       <div class="wz"><b>${esc(w.zoneLabel)}</b><span>${melDay(w.createdAt) === melDay(new Date().toISOString()) ? 'Today' : melDay(w.createdAt).replace(/^\w+,?\s*/, '')} ${melTime(w.createdAt)} · ${plural(w.orders, 'order')} · ${fmtN(w.units)}u</span></div>
       <div class="wprog"><div class="bar"><i style="width:${pct}%"></i></div><span>${w.done}/${w.orders} fulfilled</span></div>
       <span class="pill ${w.state}">${w.state}</span>
-      <div class="wact">${who}${w.state !== 'released' ? `<button class="btn sm" data-print="${esc(w.id)}">Print</button>` : ''}${open ? `<button class="btn sm ghost danger" data-release="${esc(w.id)}">Release</button>` : ''}</div>
+      <div class="wact">${w.archived
+        ? `${who}<button class="btn sm" data-restore="${esc(w.id)}" title="Put it back on the board">Restore</button>
+           <button class="btn sm ghost danger" data-delete="${esc(w.id)}" title="Delete the record and its slip file for good">Delete</button>`
+        : `${who}${!released ? `<button class="btn sm" data-print="${esc(w.id)}">Print</button>` : ''}` +
+          `${open ? `<button class="btn sm ghost danger" data-release="${esc(w.id)}">Release</button>` : ''}` +
+          `${finished ? `<button class="btn sm" data-archive="${esc(w.id)}" title="Clear it off the board, keep the record">Archive</button>` : ''}`}</div>
     </div>`;
   }).join('');
 }
@@ -1038,9 +1135,16 @@ $('#waves').addEventListener('click', async e => {
   if (n) return renameWave(n.dataset.rename);
   const k = e.target.closest('[data-picker]');
   if (k) return assignPicker(k.dataset.picker);
+  const a = e.target.closest('[data-archive]');
+  if (a) return archiveWave(a.dataset.archive);
+  const s = e.target.closest('[data-restore]');
+  if (s) return restoreWave(s.dataset.restore);
+  const d = e.target.closest('[data-delete]');
+  if (d) return deleteWave(d.dataset.delete);
   const r = e.target.closest('[data-release]');
   if (r) { try { await releaseWave(r.dataset.release); } catch (err) { reportError(err); } }
 });
+$('#arch-toggle').addEventListener('click', () => { S.showArchived = !S.showArchived; renderWaves(); });
 let findTimer = null;
 $('#q').addEventListener('input', () => { clearTimeout(findTimer); findTimer = setTimeout(renderFind, 120); });
 $('#q').addEventListener('keydown', e => {
@@ -1085,7 +1189,8 @@ async function boot() {
 }
 
 window.App = { S, load, refresh, saveWave, printWave, releaseWave, openBuilder, closeBuilder,
-  renderApp, renderFind, renameWave, assignPicker, setWaveFields, PickLib };
+  renderApp, renderFind, renderWaves, renameWave, assignPicker, setWaveFields,
+  archiveWave, restoreWave, deleteWave, PickLib };
 boot();
 })();
 </script>

@@ -28,6 +28,14 @@ function fakeGitHub(token, seed) {
       if (/raw/.test(init.headers.Accept)) return res(200, null, f.text);
       return res(200, { sha: f.sha, encoding: 'base64', content: Buffer.from(f.text).toString('base64').replace(/(.{60})/g, '$1\n') });
     }
+    if (init.method === 'DELETE') {
+      const d = JSON.parse(init.body);
+      const dk = d.branch + ':' + path, df = files[dk];
+      if (!df) return res(404, { message: 'Not Found' });
+      if (d.sha !== df.sha) return res(409, { message: 'sha mismatch' });
+      delete files[dk];
+      return res(200, { content: null });
+    }
     const b = JSON.parse(init.body);
     const k = b.branch + ':' + path, f = files[k];
     if (f && !b.sha) return res(422, { message: 'Invalid request.\n\n"sha" wasn\'t supplied.' });
@@ -75,6 +83,15 @@ for (const [name, make] of Object.entries(makers)) {
     assert.equal(await store.getWave('W-260915-01'), enc);
     await assert.rejects(store.putWave('W-260915-01', 'again'), e => e.code === 'CONFLICT');
     await assert.rejects(store.getWave('W-nope'), e => e.code === 'NOT_FOUND');
+
+    // delete takes the encrypted slips with it; deleting what is already gone is not an error
+    assert.equal(await store.delWave('W-260915-01', 'bye'), true);
+    await assert.rejects(store.getWave('W-260915-01'), e => e.code === 'NOT_FOUND');
+    assert.equal(await store.delWave('W-260915-01'), false);
+    assert.equal(await store.delWave('W-never-existed'), false);
+    // the id is free again afterwards
+    await store.putWave('W-260915-01', 'fresh');
+    assert.equal(await store.getWave('W-260915-01'), 'fresh');
   });
 }
 

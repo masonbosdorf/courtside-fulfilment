@@ -6,6 +6,7 @@
      putIndex(index, sha, msg) PUT  contents/waves/index.json  (sha = the lock) → {sha}
      getWave(id)               GET  contents/waves/<id>.enc?ref=waves           (raw, encrypted)
      putWave(id, text, msg)    PUT  contents/waves/<id>.enc    (create-only)
+     delWave(id, msg)          DEL  contents/waves/<id>.enc    → false if already gone
 
    LocalStore (dev + tests) — the same contract over memory or localStorage with simulated shas.
 
@@ -87,6 +88,15 @@
       async putWave(id, text, message) {
         await call('PUT', url(`waves/${id}.enc`), { body: { message: message || `Wave ${id}`, branch: wavesBranch, content: b64encode(text) } });
       },
+      // permanent: the encrypted slips (which hold the addresses) go with the register entry.
+      // false = there was nothing to delete, which is not an error.
+      async delWave(id, message) {
+        let sha;
+        try { sha = (await call('GET', url(`waves/${id}.enc`, wavesBranch))).sha; }
+        catch (e) { if (e.code === 'NOT_FOUND') return false; throw e; }
+        await call('DELETE', url(`waves/${id}.enc`), { body: { message: message || `Delete wave ${id}`, branch: wavesBranch, sha } });
+        return true;
+      },
     };
   }
 
@@ -130,6 +140,13 @@
         if (files[`waves/${id}.enc`]) throw fail('CONFLICT', 'Wave id already used: ' + id);
         files[`waves/${id}.enc`] = { text, sha: newSha() };
         persist();
+      },
+      async delWave(id) {
+        const k = `waves/${id}.enc`;
+        if (!files[k]) return false;
+        delete files[k];
+        persist();
+        return true;
       },
       reset() { files = {}; persist(); },
     };

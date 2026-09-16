@@ -7,7 +7,10 @@
              hold, pickupReady, shipTo, billTo, note, attrs, lines:[{sku, qty, desc, size, cls, parent}]}
      index  waves/index.json     {v, waves:[{id, name, picker, createdAt, zone, filters, sort,
                                    count, units, orders:[{no, lines:[[sku, bin, qty], …]}],
-                                   releasedAt}]}   ← PUBLIC file: name/picker only, never a customer
+                                   releasedAt, archivedAt}]}
+                                 ← PUBLIC file: name/picker only, never a customer.
+                                   archivedAt hides a finished wave from the board (the record
+                                   stays); deleting drops the entry and its waves/<id>.enc.
      Z      compileZones(zones.json)
 
    Rules (see Pick Waves/PLAN.md §3)
@@ -398,6 +401,7 @@
           : 'open';
         return { id: w.id, name: w.name || '', picker: w.picker || '',
                  zone: w.zone, zoneLabel: w.zoneLabel || w.zone, createdAt: w.createdAt,
+                 archivedAt: w.archivedAt || null, archived: !!w.archivedAt,
                  orders: nos.length, units: w.units || 0, done, state };
       });
   }

@@ -287,6 +287,23 @@ test('waveSummary carries name and picker, blank for waves saved before the feat
   assert.deepEqual(s.map(x => [x.id, x.name, x.picker]), [['W-260916-01', 'Express first', 'Nick'], ['W-260916-02', '', '']]);
 });
 
+test('waveSummary reports archived waves, and the public seed leaves them out', () => {
+  const p = pool([order('1', [['X', 1]])], {});
+  const w = (id, archivedAt) => ({ id, zone: 'A1', createdAt: '2026-09-16T03:00:00Z', units: 1,
+    orders: [{ no: '1', lines: [] }], releasedAt: '2026-09-16T03:30:00Z', archivedAt: archivedAt || null });
+  const s = L.waveSummary({ waves: [w('W-1'), w('W-2', '2026-09-16T04:00:00Z')] }, p, '2026-09-16T05:00:00Z');
+  assert.deepEqual(s.map(x => [x.id, x.archived]), [['W-1', false], ['W-2', true]]);
+  assert.equal(s[1].archivedAt, '2026-09-16T04:00:00Z');
+  assert.equal(s[0].archivedAt, null);
+  // pick-fetch.js writes exactly this into the public seed
+  assert.deepEqual(s.filter(x => !x.archived).map(x => x.id), ['W-1']);
+  // a longer window is how the archived view reaches older waves
+  const old = { waves: [w('W-OLD', '2026-09-16T04:00:00Z')] };
+  old.waves[0].createdAt = '2026-01-01T03:00:00Z';
+  assert.equal(L.waveSummary(old, p, '2026-09-16T05:00:00Z').length, 0);
+  assert.equal(L.waveSummary(old, p, '2026-09-16T05:00:00Z', 3650).length, 1);
+});
+
 test('searchOrders finds an order by name or number and says where it is', () => {
   const bins = { X: [['A-001-01', 9]] };
   const orders = [

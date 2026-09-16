@@ -224,7 +224,7 @@ async function main() {
     global.window = {};
     new Function('window', text)(global.window);
     const s = global.window.SEED;
-    s.waves = PickLib.waveSummary(index, pool, pool.asOf);
+    s.waves = PickLib.waveSummary(index, pool, pool.asOf).filter(w => !w.archived);
     fs.writeFileSync(seedPath, header + 'window.SEED = ' + JSON.stringify(s) + ';\n');
     waveNote = ` waves=${s.waves.length}`;
   }
