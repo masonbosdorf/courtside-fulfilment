@@ -327,7 +327,7 @@ const qs = new URLSearchParams(location.search);
 const DEV = qs.has('dev');
 const CFG_KEY = DEV ? 'pw_cfg_dev' : 'pw_cfg';
 const DEFAULT_MAX = 40;
-const S = { cfg: null, store: null, Z: null, pool: null, index: { v: 1, waves: [] }, sha: null, plan: null, busy: false, builder: null, showArchived: false };
+const S = { cfg: null, store: null, Z: null, pool: null, index: { v: 1, waves: [] }, sha: null, plan: null, busy: false, builder: null, showArchived: false, pending: 0 };
 const ARCHIVE_DAYS = 3650;        // the archived view is history, not the 14-day board
 
 const $ = (sel, el) => (el || document).querySelector(sel);
@@ -465,6 +465,29 @@ async function renameWave(id) {
   } catch (e) { reportError(e); }
 }
 
+// Optimistic write: repaint the board now so the tap feels instant, then sync. The register is
+// shared, so a write that fails must put the row back rather than leave the screen lying.
+// S.pending holds off the background refresh while a write is in flight, or a poll landing
+// mid-write would flick the row back and forth.
+async function optimistic(mutate, work, failed) {
+  const prevIndex = S.index, prevSha = S.sha;
+  S.index = Object.assign({}, S.index, { waves: mutate((S.index.waves || []).slice()) });
+  replan();
+  S.pending++;
+  try {
+    await work();
+    return true;
+  } catch (e) {
+    S.index = prevIndex;
+    S.sha = prevSha;
+    replan();
+    reportError(Object.assign(new Error(`${failed} — put back. ${(e && e.message) || ''}`.trim()), { code: e && e.code }));
+    return false;
+  } finally {
+    S.pending--;
+  }
+}
+
 // Archive is only offered on done/released waves, which hold no stock, so clearing one off the
 // board can never hide a live reservation. The record stays in the register.
 async function archiveWave(id) {
@@ -476,18 +499,18 @@ async function archiveWave(id) {
     toast(`${id} still has ${plural(sum.orders - sum.done, 'order')} to fulfil — release it first, then archive.`, 'bad');
     return false;
   }
-  try {
-    await setWaveFields(id, { archivedAt: new Date().toISOString() }, `Archive ${id}`);
-    toast(`${id} archived — see Archived`, 'good');
-    return true;
-  } catch (e) { reportError(e); return false; }
+  const at = new Date().toISOString();
+  return optimistic(
+    waves => waves.map(w => (w.id === id ? Object.assign({}, w, { archivedAt: at }) : w)),
+    () => setWaveFields(id, { archivedAt: at }, `Archive ${id}`),
+    `Could not archive ${id}`);
 }
 
 async function restoreWave(id) {
-  try {
-    await setWaveFields(id, { archivedAt: null }, `Restore ${id}`);
-    toast(`${id} back on the board`, 'good');
-  } catch (e) { reportError(e); }
+  return optimistic(
+    waves => waves.map(w => (w.id === id ? Object.assign({}, w, { archivedAt: null }) : w)),
+    () => setWaveFields(id, { archivedAt: null }, `Restore ${id}`),
+    `Could not restore ${id}`);
 }
 
 // permanent: drops the register entry, then the encrypted slips file
@@ -504,31 +527,29 @@ async function deleteWave(id) {
     ok: 'Delete for ever', danger: true,
   });
   if (!go) return;
-  showBusy(`Deleting ${id}…`);
-  try {
-    for (let attempt = 0; ; attempt++) {
-      const r = await S.store.getIndex();
-      const now = new Date().toISOString();
-      const next = Object.assign({}, r.index, { updated: now, waves: (r.index.waves || []).filter(x => x.id !== id) });
-      try {
-        const p = await S.store.putIndex(next, r.sha, `Delete ${id}`);
-        S.index = next; S.sha = p.sha;
-        break;
-      } catch (e) {
-        if (e.code !== 'CONFLICT' || attempt >= 4) throw e;
+  // the row goes now; the register write and the slip-file delete happen behind it
+  return optimistic(
+    waves => waves.filter(x => x.id !== id),
+    async () => {
+      for (let attempt = 0; ; attempt++) {
+        const r = await S.store.getIndex();
+        const now = new Date().toISOString();
+        const next = Object.assign({}, r.index, { updated: now, waves: (r.index.waves || []).filter(x => x.id !== id) });
+        try {
+          const p = await S.store.putIndex(next, r.sha, `Delete ${id}`);
+          S.index = next; S.sha = p.sha;
+          break;
+        } catch (e) {
+          if (e.code !== 'CONFLICT' || attempt >= 4) throw e;
+        }
       }
-    }
-    // the register is what the board reads, so a failed file delete still leaves the wave gone
-    let fileGone = true;
-    try { await S.store.delWave(id, `Delete wave ${id} slips`); } catch (e) { fileGone = false; }
-    replan();
-    if (fileGone) toast(`${id} deleted`, 'good');
-    else toast(`${id} removed from the board, but its slip file could not be deleted — try again or remove it in GitHub.`, 'bad');
-  } catch (e) {
-    reportError(e);
-  } finally {
-    hideBusy();
-  }
+      // the register is what the board reads, so a failed file delete still leaves the wave gone
+      let fileGone = true;
+      try { await S.store.delWave(id, `Delete wave ${id} slips`); } catch (e) { fileGone = false; }
+      if (fileGone) toast(`${id} deleted`, 'good');
+      else toast(`${id} removed from the board, but its slip file could not be deleted — try again or remove it in GitHub.`, 'bad');
+    },
+    `Could not delete ${id}`);
 }
 
 async function assignPicker(id) {
@@ -1162,7 +1183,7 @@ document.addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); $('#q').focus(); $('#q').select(); }
 });
 setInterval(() => { if (!$('#app').hidden) renderStatus(); }, 30000);
-setInterval(() => { if (!$('#app').hidden && !document.hidden && !S.builder && !$('#modal-root').children.length) refresh(true); }, 120000);
+setInterval(() => { if (!$('#app').hidden && !document.hidden && !S.builder && !S.pending && !$('#modal-root').children.length) refresh(true); }, 120000);
 
 async function boot() {
   const logo = window.PICK_LOGO || '';
