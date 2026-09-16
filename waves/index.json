@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-09-16T03:52:42.614Z",
+ "updated": "2026-09-16T03:53:28.765Z",
  "waves": [
   {
    "id": "W-260915-01",
@@ -1111,7 +1111,8 @@
     }
    ],
    "releasedAt": null,
-   "name": "Morning Run"
+   "name": "Morning Run",
+   "archivedAt": "2026-09-16T03:53:28.126Z"
   },
   {
    "id": "W-260916-04",
