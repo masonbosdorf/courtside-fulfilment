@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-09-18T02:52:21.532Z",
+ "updated": "2026-09-18T03:29:43.827Z",
  "waves": [
   {
    "id": "W-260915-01",
@@ -2568,6 +2568,58 @@
       [
        "NIMTB7NBHB-L",
        "A-037-02-035",
+       1
+      ]
+     ]
+    }
+   ],
+   "releasedAt": null
+  },
+  {
+   "id": "W-260918-06",
+   "name": "",
+   "picker": "",
+   "createdAt": "2026-09-18T03:29:43.827Z",
+   "zone": "*",
+   "zoneLabel": "All zones",
+   "filters": {
+    "ship": [
+     "standard",
+     "express"
+    ],
+    "cls": [],
+    "units": [],
+    "states": [],
+    "sku": "",
+    "cust": "",
+    "dateTo": ""
+   },
+   "sort": [
+    {
+     "key": "stop",
+     "dir": "asc"
+    }
+   ],
+   "poolAsOf": "2026-09-18T13:25:40+10:00",
+   "count": 2,
+   "units": 2,
+   "orders": [
+    {
+     "no": "55265",
+     "lines": [
+      [
+       "DN2002-490-M",
+       "A-014-02-005",
+       1
+      ]
+     ]
+    },
+    {
+     "no": "55263",
+     "lines": [
+      [
+       "II4420-010-2XL",
+       "A-168-01-010",
        1
       ]
      ]
