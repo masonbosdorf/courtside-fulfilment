@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-09-17T22:18:48.820Z",
+ "updated": "2026-09-18T00:08:36.407Z",
  "waves": [
   {
    "id": "W-260915-01",
@@ -2359,6 +2359,58 @@
       [
        "IQ1680-068-XL",
        "1F-04-010",
+       1
+      ]
+     ]
+    }
+   ],
+   "releasedAt": null
+  },
+  {
+   "id": "W-260918-02",
+   "name": "",
+   "picker": "",
+   "createdAt": "2026-09-18T00:08:36.407Z",
+   "zone": "*",
+   "zoneLabel": "All zones",
+   "filters": {
+    "ship": [
+     "standard",
+     "express"
+    ],
+    "cls": [],
+    "units": [],
+    "states": [],
+    "sku": "",
+    "cust": "",
+    "dateTo": ""
+   },
+   "sort": [
+    {
+     "key": "express",
+     "dir": "asc"
+    }
+   ],
+   "poolAsOf": "2026-09-18T10:05:57+10:00",
+   "count": 2,
+   "units": 2,
+   "orders": [
+    {
+     "no": "55243",
+     "lines": [
+      [
+       "IQ3917-100-11.5",
+       "A-102-03",
+       1
+      ]
+     ]
+    },
+    {
+     "no": "55242",
+     "lines": [
+      [
+       "IO6427-010-XL",
+       "1F-04-027",
        1
       ]
      ]
