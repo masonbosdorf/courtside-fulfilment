@@ -135,7 +135,9 @@ input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px soli
 .zrow.zhead>div{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);text-align:right}
 .zrow.zhead>div:first-child{text-align:left}
 
-.wrow{display:grid;grid-template-columns:150px minmax(0,1fr) 118px 76px 206px;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line)}
+/* last column carries the actions; wide enough that every row can offer Archive
+   alongside Print and Release without the buttons wrapping */
+.wrow{display:grid;grid-template-columns:150px minmax(0,1fr) 118px 76px 262px;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line)}
 .wrow:last-child{border-bottom:0}
 .wrow .wid{font-family:var(--mono);font-weight:600;font-size:13px}
 .wrow .wz b{display:block;font-weight:700}
@@ -157,6 +159,19 @@ input:focus,select:focus,.btn:focus-visible,.chip:focus-visible{outline:2px soli
 .ph-lnk:hover{color:var(--ink)}
 .wrow.arch{opacity:.62}
 .wrow.arch:hover{opacity:1}
+/* a parked wave (archived, never released) still holds stock — say so in its own colour */
+.pill.hold{background:var(--watch-soft);color:var(--watch)}
+.wopen{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--ink);text-align:left}
+.wopen:hover{color:var(--blue);text-decoration:underline}
+/* wave detail */
+.wd{display:block;overflow:auto;padding:14px 16px}
+.wd-sum{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.wd-sum .meta{margin-left:auto}
+.wd-t{width:100%}
+.wd-t td,.wd-t th{vertical-align:middle}
+.wd-route span{display:inline-block;padding:1px 5px;border-radius:4px;background:var(--surf-3);margin:1px 0}
+.wd-route .chk{background:var(--watch-soft);color:var(--watch);font-weight:700}
+.wd-sub td{padding-top:0;color:var(--ink-3);font-size:11px;border-top:0}
 
 /* find */
 .find{position:relative;width:min(300px,42vw)}
@@ -295,7 +310,7 @@ table.t .b{font-weight:600}
         <div id="zones"></div>
       </div>
       <div class="panel">
-        <div class="ph"><h2>Waves</h2><button class="lnk ph-lnk" id="arch-toggle" type="button" hidden></button><span class="meta" id="waves-meta">last 14 days</span></div>
+        <div class="ph"><h2>Waves</h2><button class="lnk ph-lnk" id="arch-done" type="button" hidden></button><button class="lnk ph-lnk" id="arch-toggle" type="button" hidden></button><span class="meta" id="waves-meta">last 14 days</span></div>
         <div id="waves"></div>
       </div>
     </section>
@@ -373,19 +388,23 @@ function reportError(e) {
   if (e && e.code === 'AUTH') setTimeout(() => lock(true), 1200);
 }
 
-function dialog({ title, body, ok = 'OK', cancel = 'Cancel', danger = false }) {
+// `extra` adds a third button and resolves to the string 'extra' — truthy, so callers
+// that don't ask for one are unaffected. Used where a choice has two real answers
+// (release the wave, or park it) rather than yes/no.
+function dialog({ title, body, ok = 'OK', cancel = 'Cancel', danger = false, extra = '' }) {
   return new Promise(resolve => {
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.innerHTML = `<div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-t">
       <h3 id="dlg-t">${esc(title)}</h3><div class="dlg-body">${body}</div>
       <div class="dlg-foot">${cancel ? `<button class="btn" data-a="no">${esc(cancel)}</button>` : ''}
+      ${extra ? `<button class="btn" data-a="extra">${esc(extra)}</button>` : ''}
       <button class="btn ${danger ? 'danger-fill' : 'primary'}" data-a="yes">${esc(ok)}</button></div></div>`;
     const finish = v => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
     const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); finish(false); } };
     back.addEventListener('click', e => {
       const b = e.target.closest('[data-a]');
-      if (b) finish(b.dataset.a === 'yes');
+      if (b) finish(b.dataset.a === 'yes' ? true : b.dataset.a === 'extra' ? 'extra' : false);
       else if (e.target === back) finish(false);
     });
     document.addEventListener('keydown', onKey, true);
@@ -429,26 +448,52 @@ function promptDialog({ title, label, value, ok = 'Save', max = 40, hint = '', n
 // pickers already used, so the same spelling comes back next time
 const knownPickers = () => [...new Set((S.index.waves || []).map(w => w.picker).filter(Boolean))].sort();
 
-// patch one wave in the register under the sha we read — same lock as releaseWave
-async function setWaveFields(id, patch, message) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const r = await S.store.getIndex();
-    const w = (r.index.waves || []).find(x => x.id === id);
-    if (!w) throw userError(`${id} isn't in the register.`);
-    const now = new Date().toISOString();
-    const next = Object.assign({}, r.index, { updated: now,
-      waves: r.index.waves.map(x => (x.id === id ? Object.assign({}, x, patch) : x)) });
-    try {
-      const p = await S.store.putIndex(next, r.sha, message);
-      S.index = next; S.sha = p.sha;
-      replan();
-      return true;
-    } catch (e) {
-      if (e.code !== 'CONFLICT') throw e;
+/* ⚠ Every register write goes through this queue, one at a time.
+   Archiving used to bounce back a few seconds after the click. Two writes started close
+   together — two Archive taps, or an archive landing next to a rename — each ran their own
+   read-modify-write, and the second one's GET went out before the first one's PUT had
+   landed. It then wrote under a sha that was already stale, took a CONFLICT, and retried
+   five times with no pause at all: five attempts against the same stale read, all inside
+   a second or two. When the retries ran out `optimistic` put the row back, so the tap
+   looked like it had been undone by itself.
+   Serialising the writes removes the race outright; the backoff covers GitHub serving a
+   read from a moment before the write it just accepted. */
+let writeChain = Promise.resolve();
+const queueWrite = fn => {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.then(() => {}, () => {});     // a failed write must not poison the queue
+  return run;
+};
+const pause = ms => new Promise(r => setTimeout(r, ms));
+
+// patch one or many waves in a SINGLE register write, under the sha we read.
+// One write for a bulk archive rather than one per wave: N writes would race each other
+// and, worse, a later one could overwrite a stamp an earlier one had just made.
+async function setWavesFields(ids, patch, message) {
+  const want = new Set([].concat(ids));
+  return queueWrite(async () => {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (attempt) await pause(250 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 150));
+      const r = await S.store.getIndex();
+      const hit = (r.index.waves || []).filter(x => want.has(x.id));
+      if (!hit.length) throw userError(`${[...want].join(', ')} isn't in the register.`);
+      const now = new Date().toISOString();
+      const next = Object.assign({}, r.index, { updated: now,
+        waves: r.index.waves.map(x => (want.has(x.id) ? Object.assign({}, x, patch) : x)) });
+      try {
+        const p = await S.store.putIndex(next, r.sha, message);
+        S.index = next; S.sha = p.sha;
+        replan();
+        return true;
+      } catch (e) {
+        if (e.code !== 'CONFLICT') throw e;
+      }
     }
-  }
-  throw userError('Could not save — the register kept changing. Try again.');
+    throw userError('Could not save — the register kept changing. Try again in a moment.');
+  });
 }
+
+const setWaveFields = (id, patch, message) => setWavesFields([id], patch, message);
 
 async function renameWave(id) {
   const cur = (S.index.waves || []).find(w => w.id === id) || {};
@@ -488,22 +533,67 @@ async function optimistic(mutate, work, failed) {
   }
 }
 
-// Archive is only offered on done/released waves, which hold no stock, so clearing one off the
-// board can never hide a live reservation. The record stays in the register.
+/* Archive is offered on every wave. A finished one holds nothing, so it just goes.
+   ⚠ An unfinished one is the careful case: reservations key off releasedAt, NOT
+   archivedAt, so archiving alone takes the row off the board while its orders stay
+   claimed and their bin units stay held. That is sometimes the point (a wave paused
+   mid-pick that you mean to come back to) and sometimes a trap, so it asks instead of
+   deciding for you. The record always stays in the register. */
 async function archiveWave(id) {
   const sum = PickLib.waveSummary(S.index, S.pool, null, ARCHIVE_DAYS).find(x => x.id === id);
   if (!sum) return false;
-  // The button is hidden for open waves, but enforce it here too: an open wave still holds its
-  // orders and their bin units, and archiving would hide that hold from the board.
-  if (sum.state !== 'done' && sum.state !== 'released') {
-    toast(`${id} still has ${plural(sum.orders - sum.done, 'order')} to fulfil — release it first, then archive.`, 'bad');
-    return false;
+  const left = sum.orders - sum.done;
+  const finished = sum.state === 'done' || sum.state === 'released';
+  let alsoRelease = false;
+  if (!finished) {
+    const go = await dialog({
+      title: `Archive ${id}?`,
+      body: `<p>${plural(left, 'order')} in it ${left === 1 ? 'is' : 'are'} still unfulfilled.</p>
+        <p><b>Release &amp; archive</b> — ${left === 1 ? 'it goes' : 'they go'} back in the pool and the bin holds drop. The usual choice.</p>
+        <p><b>Park</b> — the holds stay, so those orders remain claimed by this wave and can't be re-waved. It shows under Archived as <b>holding</b>.</p>
+        <p>Bin any slips already printed for it.</p>`,
+      ok: 'Release & archive', extra: 'Park', danger: true,
+    });
+    if (!go) return false;
+    alsoRelease = go !== 'extra';
   }
   const at = new Date().toISOString();
+  const patch = alsoRelease ? { archivedAt: at, releasedAt: at } : { archivedAt: at };
   return optimistic(
-    waves => waves.map(w => (w.id === id ? Object.assign({}, w, { archivedAt: at }) : w)),
-    () => setWaveFields(id, { archivedAt: at }, `Archive ${id}`),
+    waves => waves.map(w => (w.id === id ? Object.assign({}, w, patch) : w)),
+    () => setWavesFields([id], patch, `Archive ${id}${alsoRelease ? ' (released)' : ''}`),
     `Could not archive ${id}`);
+}
+
+/* Sweep every finished wave off the board in ONE register write. Per-wave writes would
+   race each other and a later one could overwrite a stamp an earlier one just made —
+   which is the bug that made a single archive bounce back. Scans the full archive window,
+   not the 14-day board: a wave that finished three weeks ago is still unarchived, and
+   would otherwise be unreachable. Released waves are left alone — they are already off
+   the hook and "completed" means every order was actually fulfilled. */
+async function archiveDone() {
+  const done = PickLib.waveSummary(S.index, S.pool, null, ARCHIVE_DAYS)
+    .filter(w => !w.archived && w.state === 'done');
+  if (!done.length) { toast('No completed waves to archive.', 'good'); return false; }
+  const ids = done.map(w => w.id);
+  const go = await dialog({
+    title: `Archive ${plural(ids.length, 'completed wave')}?`,
+    body: `<p>Every order in ${ids.length === 1 ? 'it has' : 'them has'} been fulfilled, so nothing is still held.</p>
+      <ul>${done.slice(0, 12).map(w => `<li><b class="mono">${esc(w.id)}</b>${w.name ? ' — ' + esc(w.name) : ''} · ${plural(w.orders, 'order')}</li>`).join('')}
+      ${ids.length > 12 ? `<li>…and ${ids.length - 12} more</li>` : ''}</ul>
+      <p>The records stay — they move to <b>Archived</b>.</p>`,
+    ok: `Archive ${ids.length}`,
+  });
+  if (!go) return false;
+  const at = new Date().toISOString();
+  const set = new Set(ids);
+  return optimistic(
+    waves => waves.map(w => (set.has(w.id) ? Object.assign({}, w, { archivedAt: at }) : w)),
+    async () => {
+      await setWavesFields(ids, { archivedAt: at }, `Archive ${ids.length} completed wave${ids.length === 1 ? '' : 's'}`);
+      toast(`${plural(ids.length, 'wave')} archived`, 'good');
+    },
+    `Could not archive ${ids.length === 1 ? ids[0] : plural(ids.length, 'wave')}`);
 }
 
 async function restoreWave(id) {
@@ -820,6 +910,12 @@ function renderWaves() {
   const toggle = $('#arch-toggle');
   toggle.hidden = !archived.length && !S.showArchived;
   toggle.textContent = S.showArchived ? '← Active' : `Archived (${archived.length})`;
+  // One click to clear every finished wave. Only on the active board, and only when
+  // there is something to sweep, so it never sits there as a dead control.
+  const sweep = active.filter(w => w.state === 'done').length;
+  const doneBtn = $('#arch-done');
+  doneBtn.hidden = S.showArchived || !sweep;
+  doneBtn.textContent = `Archive completed (${sweep})`;
   $('#waves-meta').textContent = S.showArchived
     ? (archived.length ? `${plural(archived.length, 'wave')} · archived` : 'archived')
     : (active.length ? `${plural(active.length, 'wave')} · last 14 days` : 'last 14 days');
@@ -838,6 +934,8 @@ function renderWaves() {
     const released = w.state === 'released';
     const finished = w.state === 'done' || released;      // holds nothing → safe to archive
     const locked = w.archived || released;                // no renaming or reassigning from here
+    // archived without releasing, with orders still to fulfil → the hold is still live
+    const parked = w.archived && !released && w.done < w.orders;
     const nameCell = locked
       ? (w.name ? `<span class="wname">${esc(w.name)}</span>` : '')
       : `<button class="lnk${w.name ? '' : ' none'}" data-rename="${esc(w.id)}" title="Name this wave">${w.name ? esc(w.name) : '+ name'}</button>`;
@@ -845,16 +943,22 @@ function renderWaves() {
       ? (w.picker ? `<span class="who-txt">${esc(w.picker)}</span>` : '')
       : `<button class="btn sm who${w.picker ? '' : ' none'}" data-picker="${esc(w.id)}" title="Assign a picker">${w.picker ? esc(w.picker) : 'Assign'}</button>`;
     return `<div class="wrow ${w.state}${w.archived ? ' arch' : ''}">
-      <div class="wid"><span>${esc(w.id)}</span>${nameCell}</div>
+      <div class="wid"><button class="lnk wopen" data-open="${esc(w.id)}" title="Open ${esc(w.id)} — every order, its fulfilment status and its route">${esc(w.id)}</button>${nameCell}</div>
       <div class="wz"><b>${esc(w.zoneLabel)}</b><span>${melDay(w.createdAt) === melDay(new Date().toISOString()) ? 'Today' : melDay(w.createdAt).replace(/^\w+,?\s*/, '')} ${melTime(w.createdAt)} · ${plural(w.orders, 'order')} · ${fmtN(w.units)}u</span></div>
       <div class="wprog"><div class="bar"><i style="width:${pct}%"></i></div><span>${w.done}/${w.orders} fulfilled</span></div>
-      <span class="pill ${w.state}">${w.state}</span>
+      ${parked
+        ? `<span class="pill hold" title="Parked: archived without releasing, so its ${plural(w.orders - w.done, 'unfulfilled order')} ${w.orders - w.done === 1 ? 'is' : 'are'} still claimed by this wave and ${w.orders - w.done === 1 ? 'its' : 'their'} bin units are still held. Release it to give them back.">holding</span>`
+        : `<span class="pill ${w.state}">${w.state}</span>`}
       <div class="wact">${w.archived
         ? `${who}<button class="btn sm" data-restore="${esc(w.id)}" title="Put it back on the board">Restore</button>
            <button class="btn sm ghost danger" data-delete="${esc(w.id)}" title="Delete the record and its slip file for good">Delete</button>`
         : `${who}${!released ? `<button class="btn sm" data-print="${esc(w.id)}">Print</button>` : ''}` +
           `${open ? `<button class="btn sm ghost danger" data-release="${esc(w.id)}">Release</button>` : ''}` +
-          `${finished ? `<button class="btn sm" data-archive="${esc(w.id)}" title="Clear it off the board, keep the record">Archive</button>` : ''}`}</div>
+          // Archive is offered on every wave now, not just finished ones. An unfinished
+          // wave asks first whether to release its orders or park them still held.
+          `<button class="btn sm" data-archive="${esc(w.id)}" title="${finished
+            ? 'Clear it off the board, keep the record'
+            : 'Take it off the board — you choose whether its orders go back to the pool'}">Archive</button>`}</div>
     </div>`;
   }).join('');
 }
@@ -913,8 +1017,8 @@ function openBuilder(zone) {
         ${states.length ? `<div class="f"><span class="fl">Ship-to state</span><div class="chips">${chips('states', states)}</div></div>` : ''}
         <div class="f two"><div class="f"><label class="fl" for="b-sku">SKU contains</label><input type="text" id="b-sku" placeholder="e.g. IQ8249" autocomplete="off"></div>
           <div class="f"><label class="fl" for="b-max">Max orders</label><input type="number" id="b-max" min="1" max="999" value="${DEFAULT_MAX}"></div></div>
-        <div class="f"><label class="fl" for="b-cust">Customer</label><input type="text" id="b-cust" placeholder="e.g. YUHE" autocomplete="off">
-          <div class="hint">Part of a first or last name.</div></div>
+        <div class="f"><label class="fl" for="b-cust">Customer</label><input type="text" id="b-cust" placeholder="e.g. Jake, Yuhe" autocomplete="off">
+          <div class="hint">Part of a first or last name. Comma-separates: <b>Jake, Yuhe</b> takes either; <b>-jake, -yuhe</b> takes everyone else.</div></div>
         <div class="f"><span class="fl">Slip order</span>
           ${B.sort.map((s, i) => `<div class="sort-row"><span class="n">${i + 1}</span><select data-sort="${i}" aria-label="Sort level ${i + 1}">${sortOptions(s.key)}</select><button type="button" class="btn sm" data-dir="${i}">Asc</button></div>`).join('')}
           <div class="hint">Walk order and order date always break ties.</div></div>
@@ -971,6 +1075,78 @@ function closeBuilder() {
   if (!S.builder) return;
   S.builder.el.remove();
   S.builder = null;
+}
+
+// ------------------------------------------------------------------ wave detail
+/* Open one wave: every order in it, what has happened to that order since the wave was
+   saved, and the route the picker walks. It reads the encrypted slips file exactly the way
+   printing does and labels the orders with PickLib.waveDetail — the same function recheck
+   uses — so the panel and the printed slips can never disagree about what is still live.
+   ⚠ This is the only screen that lists customer names and addresses. They come out of the
+   encrypted wave file, they stay in this tab, and none of it is ever written back into
+   waves/index.json, which is public. */
+async function openWaveDetail(id) {
+  const w = (S.index.waves || []).find(x => x.id === id);
+  if (!w) { toast(`${id} isn't in the register.`, 'bad'); return; }
+  showBusy(`Opening ${id}…`);
+  let d, slips;
+  try {
+    slips = S.detail && S.detail.id === id
+      ? S.detail.slips                                   // reopening is instant
+      : await PickCrypto.decryptJSON(await S.store.getWave(id), S.cfg.pass);
+    S.detail = { id, slips };
+    d = PickLib.waveDetail(slips, S.pool, S.index);
+  } catch (e) { hideBusy(); reportError(e); return; }
+  hideBusy();
+
+  const sum = PickLib.waveSummary(S.index, S.pool, null, ARCHIVE_DAYS).find(x => x.id === id) || {};
+  const c = d.counts;
+  const addr = a => a ? [a.name, a.company, a.a1, a.a2, a.city, a.state, a.zip].filter(Boolean).join(', ') : '';
+  const statusPill = s => (s === 'fulfilled' ? 'done' : s === 'open' ? 'open' : 'stale');
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="wd-t">
+    <div class="mh"><h3 id="wd-t">${esc(id)}${w.name ? ' · ' + esc(w.name) : ''}</h3>
+      <span class="meta mono">${esc(sum.zoneLabel || w.zone || '')} · ${melDay(w.createdAt)} ${melTime(w.createdAt)}${w.picker ? ' · ' + esc(w.picker) : ''}</span>
+      <button class="x" data-close aria-label="Close">×</button></div>
+    <div class="mb wd">
+      <div class="wd-sum">
+        ${c.fulfilled ? `<span class="pill done">${c.fulfilled} fulfilled</span>` : ''}
+        ${c.open ? `<span class="pill open">${c.open} to pick</span>` : ''}
+        ${c.changed ? `<span class="pill stale">${c.changed} changed</span>` : ''}
+        ${c.gone ? `<span class="pill released">${c.gone} gone</span>` : ''}
+        ${c.flagged ? `<span class="pill stale">${plural(c.flagged, 'bin')} to check</span>` : ''}
+        <span class="meta mono">${plural(c.total, 'order')} · ${fmtN(w.units || 0)}u</span>
+      </div>
+      <table class="t wd-t"><thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Type</th><th>State</th><th>Units</th><th>Status</th><th>Route</th></tr></thead><tbody>
+        ${d.orders.map(o => `<tr class="wd-r">
+          <td class="mono dim">${o.seq}</td>
+          <td class="mono b">#${esc(o.no)}</td>
+          <td>${esc(o.cust || '—')}</td>
+          <td>${typePill(o.type)}</td>
+          <td class="mono dim">${esc(o.state || '')}</td>
+          <td class="mono">${fmtN(o.units)}</td>
+          <td><span class="pill ${statusPill(o.status)}"${o.reason ? ` title="${esc(o.reason)}"` : ''}>${esc(o.status)}</span></td>
+          <td class="mono wd-route">${(o.stops || []).map(s =>
+            `<span class="${s.check ? 'chk' : ''}" title="${esc(s.sku)}${s.size ? ' · size ' + esc(s.size) : ''}${s.check ? ' — this bin may no longer hold the units' : ''}">${esc(s.bin)}×${s.qty}</span>`).join(' ')}</td>
+        </tr>${o.shipTo || o.note ? `<tr class="wd-sub"><td></td><td colspan="7">${esc(addr(o.shipTo))}${o.note ? ` · <b>note:</b> ${esc(o.note)}` : ''}</td></tr>` : ''}`).join('')}
+      </tbody></table>
+    </div>
+    <div class="mf"><span class="hint mono">Esc to close · customer details stay in this tab</span><div class="sp"></div>
+      <button class="btn" data-close>Close</button>
+      ${sum.state !== 'released' && c.open ? `<button class="btn primary" data-wd-print="${esc(id)}">Print ${plural(c.open, 'slip')}</button>` : ''}</div>
+  </div>`;
+
+  const shut = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); shut(); } };
+  back.addEventListener('click', e => {
+    if (e.target === back || e.target.closest('[data-close]')) return shut();
+    const p = e.target.closest('[data-wd-print]');
+    if (p) { shut(); printWave(p.dataset.wdPrint); }
+  });
+  document.addEventListener('keydown', onKey, true);
+  $('#modal-root').appendChild(back);
 }
 
 function builderOpts(B) {
@@ -1149,7 +1325,10 @@ $('#btn-lock').addEventListener('click', async () => {
   if (await dialog({ title: 'Lock this device?', body: '<p>The passphrase and GitHub token are forgotten on this browser. You will need both to unlock again.</p>', ok: 'Lock', danger: true })) lock(false);
 });
 $('#zones').addEventListener('click', e => { const b = e.target.closest('[data-zone]'); if (b) openBuilder(b.dataset.zone); });
+$('#arch-done').addEventListener('click', () => { archiveDone().catch(reportError); });
 $('#waves').addEventListener('click', async e => {
+  const o = e.target.closest('[data-open]');
+  if (o) return openWaveDetail(o.dataset.open);
   const p = e.target.closest('[data-print]');
   if (p) return printWave(p.dataset.print);
   const n = e.target.closest('[data-rename]');
@@ -1210,8 +1389,8 @@ async function boot() {
 }
 
 window.App = { S, load, refresh, saveWave, printWave, releaseWave, openBuilder, closeBuilder,
-  renderApp, renderFind, renderWaves, renameWave, assignPicker, setWaveFields,
-  archiveWave, restoreWave, deleteWave, PickLib };
+  renderApp, renderFind, renderWaves, renameWave, assignPicker, setWaveFields, setWavesFields,
+  archiveWave, archiveDone, restoreWave, deleteWave, openWaveDetail, PickLib };
 boot();
 })();
 </script>

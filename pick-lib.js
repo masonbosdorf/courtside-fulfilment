@@ -244,13 +244,30 @@
   const custName = o => (o && o.shipTo && o.shipTo.name) || (o && o.billTo && o.billTo.name) ||
     (o && o.shipTo && o.shipTo.company) || (o && o.billTo && o.billTo.company) || '';
 
-  // every query word must appear inside some name word, so "yuhe" and "chen yu" both find
-  // Yuhe Chen, and a surname-only query works the same as a first name
+  // A customer query is a comma-separated list of terms, each optionally negated with a leading '-'.
+  //   "Jake, Yuhe"    → either name
+  //   "-jake, -yuhe"  → everyone except those two
+  //   "Jake, -Stone"  → Jake, unless Stone matches too
+  // Within one term every word must appear inside some name word, so "chen yu" still means both.
+  function parseCustomerQuery(q) {
+    const inc = [], exc = [];
+    for (const raw of String(q == null ? '' : q).split(',')) {
+      const t = raw.trim();
+      if (!t) continue;
+      const neg = t[0] === '-';
+      const ws = words(neg ? t.slice(1) : t);
+      if (ws.length) (neg ? exc : inc).push(ws);
+    }
+    return { inc, exc };
+  }
+
   function matchCustomer(o, q) {
-    const qs = words(q);
-    if (!qs.length) return true;
+    const { inc, exc } = parseCustomerQuery(q);
+    if (!inc.length && !exc.length) return true;          // blank query filters nothing
     const ws = nameWords(o);
-    return qs.every(t => ws.some(w => w.includes(t)));
+    const hits = terms => terms.some(t => t.every(w => ws.some(x => x.includes(w))));
+    if (exc.length && hits(exc)) return false;            // an exclusion always wins
+    return inc.length ? hits(inc) : true;                 // only exclusions → keep the rest
   }
 
   function filterOrders(ready, f) {
@@ -348,8 +365,15 @@
     return { record, slips };
   }
 
-  // re-validate a saved wave against a fresh pool before printing
-  function recheck(slips, pool, index) {
+  /* One answer to "what happened to each order in this wave since it was saved".
+     The print path (recheck) and the wave detail view both read this, so the two can
+     never disagree about whether an order is still pickable. Per order:
+       fulfilled — item-fulfilled in NetSuite
+       gone      — no longer open in Shopify (shipped, cancelled or archived)
+       changed   — its lines no longer match what the wave reserved
+       open      — still to pick
+     Customer data comes from the encrypted slips/pool and stays in the browser. */
+  function waveDetail(slips, pool, index) {
     const live = new Map(((pool && pool.orders) || []).map(o => [o.no, o]));
     const others = { waves: ((index && index.waves) || []).filter(w => w.id !== slips.id) };
     const { res } = reservations(others, pool);
@@ -358,31 +382,54 @@
       for (const [bin, q] of rows) onhand.set(sku + SEP + bin, (onhand.get(sku + SEP + bin) || 0) + Number(q));
     }
 
-    const keep = [], dropped = [];
-    for (const o of slips.orders) {
+    const rows = (slips.orders || []).map(o => {
       const l = live.get(o.no);
-      if (!l) { dropped.push({ no: o.no, reason: 'No longer open in Shopify (shipped, cancelled or archived)' }); continue; }
-      if (l.ifDone) { dropped.push({ no: o.no, reason: 'Already fulfilled in NetSuite' }); continue; }
-      const want = new Map(), got = new Map();
-      for (const x of l.lines || []) want.set(x.sku, (want.get(x.sku) || 0) + x.qty);
-      for (const s of o.stops) got.set(s.sku, (got.get(s.sku) || 0) + s.qty);
-      const same = want.size === got.size && [...want].every(([k, v]) => got.get(k) === v);
-      if (!same) { dropped.push({ no: o.no, reason: 'Order changed since the wave was saved — release and re-wave' }); continue; }
-      keep.push(o);
-    }
+      let status = 'open', reason = '';
+      if (!l) {
+        status = 'gone'; reason = 'No longer open in Shopify (shipped, cancelled or archived)';
+      } else if (l.ifDone) {
+        status = 'fulfilled'; reason = 'Already fulfilled in NetSuite';
+      } else {
+        const want = new Map(), got = new Map();
+        for (const x of l.lines || []) want.set(x.sku, (want.get(x.sku) || 0) + x.qty);
+        for (const s of o.stops) got.set(s.sku, (got.get(s.sku) || 0) + s.qty);
+        const same = want.size === got.size && [...want].every(([k, v]) => got.get(k) === v);
+        if (!same) { status = 'changed'; reason = 'Order changed since the wave was saved — release and re-wave'; }
+      }
+      return Object.assign({}, o, { status, reason, cust: custName(o) || (l ? custName(l) : '') });
+    });
 
+    // A bin shortfall only means anything for units still to be picked, so demand is
+    // summed over the open orders alone — a fulfilled line has already left the bin.
     const need = new Map();
-    for (const o of keep) for (const s of o.stops) {
+    for (const r of rows) if (r.status === 'open') for (const s of r.stops) {
       const k = s.sku + SEP + s.bin;
       need.set(k, (need.get(k) || 0) + s.qty);
     }
-    const orders = keep.map(o => Object.assign({}, o, {
-      stops: o.stops.map(s => {
+    const orders = rows.map(r => (r.status !== 'open' ? r : Object.assign({}, r, {
+      stops: r.stops.map(s => {
         const k = s.sku + SEP + s.bin;
         return Object.assign({}, s, { check: (onhand.get(k) || 0) - (res.get(k) || 0) < need.get(k) });
       }),
-    }));
-    return { orders, dropped };
+    })));
+    const n = st => orders.filter(r => r.status === st).length;
+    return {
+      id: slips.id, orders,
+      counts: {
+        total: orders.length, open: n('open'), fulfilled: n('fulfilled'),
+        gone: n('gone'), changed: n('changed'),
+        flagged: orders.reduce((t, r) => t + (r.stops || []).filter(s => s.check).length, 0),
+      },
+    };
+  }
+
+  // re-validate a saved wave against a fresh pool before printing
+  function recheck(slips, pool, index) {
+    const d = waveDetail(slips, pool, index);
+    return {
+      orders: d.orders.filter(r => r.status === 'open'),
+      dropped: d.orders.filter(r => r.status !== 'open').map(r => ({ no: r.no, reason: r.reason })),
+    };
   }
 
   // no-PII progress for the public seed and the waves list
@@ -436,7 +483,8 @@
   return {
     compileZones, zoneOf, walkKey, reservations, stockMap, allocate, planOrders,
     filterOrders, sortOrders, selectWave, SORT_LABELS, unitBucket, ALL, ALL_LABEL,
-    nextWaveId, buildWave, recheck, waveSummary,
-    custName, matchCustomer, searchOrders, cleanLabel, cleanPicker, MAX_NAME, MAX_PICKER,
+    nextWaveId, buildWave, recheck, waveDetail, waveSummary,
+    custName, matchCustomer, parseCustomerQuery, searchOrders, cleanLabel, cleanPicker,
+    MAX_NAME, MAX_PICKER,
   };
 });

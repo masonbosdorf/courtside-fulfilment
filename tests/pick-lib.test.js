@@ -331,3 +331,82 @@ test('searchOrders finds an order by name or number and says where it is', () =>
   assert.deepEqual(L.searchOrders(plan, '  ', index), []);
   assert.deepEqual(L.searchOrders(null, 'chen', index), []);
 });
+
+test('customer query: comma-separated include, and "-" to exclude', () => {
+  const bins = { X: [['A-001-01', 9]] };
+  const ready = L.planOrders(pool([
+    order('1', [['X', 1]], { shipTo: { name: 'Jake Stone' } }),
+    order('2', [['X', 1]], { shipTo: { name: 'Yuhe Wang' } }),
+    order('3', [['X', 1]], { shipTo: { name: 'Anna Chen' } }),
+    order('4', [['X', 1]], { shipTo: { name: 'Jake Morrison' } }),
+  ], bins), null, Z).ready;
+  const pickNos = cust => L.selectWave(ready, { zone: 'A1', filters: { cust } }).map(o => o.no);
+
+  // include: either name, and both Jakes come along
+  assert.deepEqual(pickNos('Jake, Yuhe'), ['1', '2', '4']);
+  assert.deepEqual(pickNos('jake,yuhe'), ['1', '2', '4']);          // spacing and case are free
+  assert.deepEqual(pickNos('Yuhe'), ['2']);
+
+  // exclude: everyone but those
+  assert.deepEqual(pickNos('-jake, -yuhe'), ['3']);
+  assert.deepEqual(pickNos('-jake'), ['2', '3']);
+
+  // mixed — this is the case Mason asked for: "Yuhe, Mason, -jake"
+  assert.deepEqual(pickNos('Jake, -Stone'), ['4']);
+  assert.deepEqual(pickNos('Jake, Yuhe, -wang'), ['1', '4']);
+
+  // a multi-word term still needs every word
+  assert.deepEqual(pickNos('jake stone'), ['1']);
+  assert.deepEqual(pickNos('jake stone, yuhe'), ['1', '2']);
+
+  // degenerate input filters nothing rather than everything
+  for (const q of ['', '  ', ',', ' , , ', '-', '- , -']) assert.deepEqual(pickNos(q), ['1', '2', '3', '4'], JSON.stringify(q));
+
+  const p = L.parseCustomerQuery('Jake, -yuhe wang');
+  assert.deepEqual(p.inc, [['jake']]);
+  assert.deepEqual(p.exc, [['yuhe', 'wang']]);
+});
+
+test('waveDetail labels every order, and recheck is the same answer filtered', () => {
+  const orders = [order('1', [['X', 1]]), order('2', [['Y', 1]]), order('3', [['Z', 1]]), order('4', [['Q', 2]])];
+  const bins = { X: [['A-001-01', 5]], Y: [['A-002-01', 5]], Z: [['A-003-01', 5]], Q: [['A-004-01', 2]] };
+  const ready = L.planOrders(pool(orders, bins), null, Z).ready;
+  const { record, slips } = L.buildWave(ready, { id: 'W-1', zone: 'A1', createdAt: '2026-09-15T03:00:00Z', Z });
+  const index = { waves: [record] };
+
+  const later = pool([
+    orders[0],                                          // unchanged → open
+    Object.assign({}, orders[1], { ifDone: true }),     // fulfilled
+    Object.assign({}, orders[3], {}),                   // still open
+  ], Object.assign({}, bins, { Q: [['A-004-01', 1]] })); // a POS sale took one of Q's two units
+  later.orders.push(Object.assign({}, orders[2], { lines: [{ sku: 'Z', qty: 2, cls: 'fw' }] }));  // edited
+
+  const d = L.waveDetail(slips, later, index);
+  assert.deepEqual(d.orders.map(o => [o.no, o.status]),
+    [['1', 'open'], ['2', 'fulfilled'], ['3', 'changed'], ['4', 'open']]);
+  assert.deepEqual([d.counts.total, d.counts.open, d.counts.fulfilled, d.counts.changed, d.counts.gone], [4, 2, 1, 1, 0]);
+  assert.match(d.orders[1].reason, /fulfilled/);
+  assert.match(d.orders[2].reason, /changed/);
+
+  // the bin behind #4 lost a unit, so that stop is flagged to check; #1's is not
+  assert.equal(d.orders[0].stops[0].check, false);
+  assert.equal(d.orders[3].stops[0].check, true);
+  assert.equal(d.counts.flagged, 1);
+  assert.equal(d.orders[0].cust, 'Test');            // the detail view needs the customer
+
+  const r = L.recheck(slips, later, index);
+  assert.deepEqual(r.orders.map(o => o.no), ['1', '4']);
+  assert.deepEqual(r.dropped.map(x => x.no), ['2', '3']);
+  assert.equal(r.orders[1].stops[0].check, true);    // same flag through both paths
+});
+
+test('waveDetail: an order that has left Shopify is gone, not changed', () => {
+  const orders = [order('1', [['X', 1]])];
+  const bins = { X: [['A-001-01', 5]] };
+  const ready = L.planOrders(pool(orders, bins), null, Z).ready;
+  const { slips } = L.buildWave(ready, { id: 'W-2', zone: 'A1', createdAt: '2026-09-15T03:00:00Z', Z });
+  const d = L.waveDetail(slips, pool([], bins), { waves: [] });
+  assert.deepEqual(d.orders.map(o => o.status), ['gone']);
+  assert.match(d.orders[0].reason, /No longer open in Shopify/);
+  assert.equal(d.counts.gone, 1);
+});
