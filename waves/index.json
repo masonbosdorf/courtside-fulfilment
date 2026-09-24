@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-09-24T02:57:45.917Z",
+ "updated": "2026-09-24T04:03:13.205Z",
  "waves": [
   {
    "id": "W-260915-01",
@@ -9498,6 +9498,93 @@
       [
        "ABAV089-30-7",
        "A-136-04",
+       1
+      ]
+     ]
+    }
+   ],
+   "releasedAt": null
+  },
+  {
+   "id": "W-260924-06",
+   "name": "",
+   "picker": "",
+   "createdAt": "2026-09-24T04:03:13.205Z",
+   "zone": "*",
+   "zoneLabel": "All zones",
+   "filters": {
+    "ship": [
+     "standard",
+     "express"
+    ],
+    "cls": [],
+    "units": [],
+    "states": [],
+    "sku": "",
+    "cust": "",
+    "dateTo": ""
+   },
+   "sort": [
+    {
+     "key": "stop",
+     "dir": "asc"
+    }
+   ],
+   "poolAsOf": "2026-09-24T14:01:07+10:00",
+   "count": 5,
+   "units": 6,
+   "orders": [
+    {
+     "no": "56027",
+     "lines": [
+      [
+       "IM4864-010-XL",
+       "A-041-02-028",
+       1
+      ],
+      [
+       "IM5046-010-XL",
+       "1F-05-068",
+       1
+      ]
+     ]
+    },
+    {
+     "no": "56017",
+     "lines": [
+      [
+       "HJ5601-100-9",
+       "A-071-03",
+       1
+      ]
+     ]
+    },
+    {
+     "no": "56028",
+     "lines": [
+      [
+       "HQ4307-001-7",
+       "A-090-01",
+       1
+      ]
+     ]
+    },
+    {
+     "no": "56026",
+     "lines": [
+      [
+       "ABAV089-33-11",
+       "A-137-01",
+       1
+      ]
+     ]
+    },
+    {
+     "no": "56029",
+     "lines": [
+      [
+       "SU24-SUMMERHEAT-BASKETBALL-WATERMELON-6",
+       "BUCKETSQUAD",
        1
       ]
      ]
