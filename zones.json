@@ -1,21 +1,17 @@
 {
-  "v": 1,
-  "about": "Pick-wave zones in WALK ORDER. A bin joins the first zone whose `bins` lists it exactly; otherwise the zone whose `prefix` matches the text before the first dash and whose `bays` range (if given) contains the number after it. Unmatched bins go to the catchAll zone. `exclude` bins are never picked from. lastResort zones are used only when no other bin holds the stock, and the slip flags them.",
+  "v": 2,
+  "about": "Pick-wave zones in WALK ORDER (the pick path). A bin joins the first zone whose `bins` lists it exactly; otherwise the zone whose `prefix` (or any of `prefixes`) matches the text before the first dash and whose `bays` range (if given) contains the number after it. Unmatched bins go to the catchAll zone. `exclude` bins are never picked from. lastResort zones are used only when no other bin holds the stock, in walk order, and the slip flags them with the zone label. `display` is the order zones are listed on the page (walk order when absent).",
   "zones": [
-    { "id": "A1",    "label": "A-001–025",      "prefix": "A",  "bays": [1, 25] },
-    { "id": "A2",    "label": "A-026–050",      "prefix": "A",  "bays": [26, 50] },
-    { "id": "A3",    "label": "A-051–075",      "prefix": "A",  "bays": [51, 75] },
-    { "id": "A4",    "label": "A-076–100",      "prefix": "A",  "bays": [76, 100] },
-    { "id": "A5",    "label": "A-101–125",      "prefix": "A",  "bays": [101, 125] },
-    { "id": "A6",    "label": "A-126–150",      "prefix": "A",  "bays": [126, 150] },
-    { "id": "A7",    "label": "A-151–183",      "prefix": "A",  "bays": [151, 999] },
-    { "id": "B",     "label": "B",              "prefix": "B" },
-    { "id": "C",     "label": "C",              "prefix": "C",  "bins": ["C - Warehouse"] },
-    { "id": "D",     "label": "D",              "prefix": "D" },
-    { "id": "1F",    "label": "1F",             "prefix": "1F" },
-    { "id": "NE",    "label": "NE (New Era)",   "prefix": "NE" },
-    { "id": "OTHER", "label": "Other bins",     "catchAll": true },
-    { "id": "SF",    "label": "Sales Floor bin", "bins": ["Sales Floor"], "lastResort": true }
+    { "id": "A",         "label": "Zone A",          "prefix": "A" },
+    { "id": "B",         "label": "Zone B",          "prefix": "B" },
+    { "id": "C",         "label": "Zone C",          "prefix": "C", "bins": ["C - Warehouse"] },
+    { "id": "D",         "label": "Zone D",          "prefix": "D" },
+    { "id": "NE",        "label": "NE",              "prefix": "NE" },
+    { "id": "TEAM",      "label": "Teamwear",        "prefixes": ["1A", "1B", "1C", "1D", "1E", "1F", "1G"], "bins": ["TEAMWEAR"] },
+    { "id": "OTHER",     "label": "Other",           "catchAll": true },
+    { "id": "SF",        "label": "Sales Floor Bin", "bins": ["Sales Floor"], "lastResort": true },
+    { "id": "RECEIVING", "label": "RECEIVING",       "bins": ["RECEIVING"], "lastResort": true }
   ],
-  "exclude": ["RECEIVING", "QUAR", "RECONCILIATION (WEB)"]
+  "display": ["A", "B", "C", "D", "NE", "RECEIVING", "SF", "TEAM", "OTHER"],
+  "exclude": ["QUAR", "RECONCILIATION (WEB)"]
 }

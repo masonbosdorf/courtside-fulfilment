@@ -23,8 +23,9 @@
      - per order: anchor = the zone that can fully cover the most lines; each line takes bins in
        the anchor zone first, then the nearest zones, then walk order; within a tier one bin that
        covers the whole qty beats splitting; lastResort zones (Sales Floor bin) only when nothing
-       else has it
-     - an order belongs to the zone of its first stop */
+       else has it (several lastResort zones → nearest in walk order first)
+     - an order belongs to the zone of its first stop
+     - Z.display = page order (zones.json `display`); Z.zones = walk order */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.PickLib = factory();
@@ -40,14 +41,17 @@
   function compileZones(cfg) {
     const zones = ((cfg && cfg.zones) || []).map((z, idx) => ({
       idx, id: z.id, label: z.label || z.id,
-      prefix: z.prefix ? String(z.prefix).trim().toUpperCase() : null,
+      prefixes: [].concat(z.prefix || [], z.prefixes || []).map(p => String(p).trim().toUpperCase()),
       bays: Array.isArray(z.bays) ? z.bays : null,
       bins: new Set((z.bins || []).map(b => String(b).trim().toUpperCase())),
       catchAll: !!z.catchAll, lastResort: !!z.lastResort,
     }));
+    const byId = new Map(zones.map(z => [z.id, z]));
+    // page order: cfg.display first (unknown ids ignored), then any zone it leaves out, in walk order
+    const shown = ((cfg && cfg.display) || []).map(id => byId.get(id)).filter(Boolean);
+    const display = [...new Set(shown.concat(zones))];
     return {
-      zones,
-      byId: new Map(zones.map(z => [z.id, z])),
+      zones, display, byId,
       exclude: new Set(((cfg && cfg.exclude) || []).map(b => String(b).trim().toUpperCase())),
       cache: new Map(),
     };
@@ -64,7 +68,7 @@
       hit = Z.zones.find(z => z.bins.has(name)) || null;
       if (!hit) {
         const p = parts(name), bay = parseInt(p[1], 10);
-        hit = Z.zones.find(z => z.prefix && z.prefix === p[0] &&
+        hit = Z.zones.find(z => z.prefixes.includes(p[0]) &&
           (!z.bays || (bay >= z.bays[0] && bay <= z.bays[1]))) || null;
       }
       if (!hit) hit = Z.zones.find(z => z.catchAll) || null;

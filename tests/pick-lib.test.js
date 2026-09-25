@@ -17,29 +17,39 @@ const binsOf = o => o.stops.map(s => `${s.bin}×${s.qty}`);
 
 test('zoneOf maps every bin family from zones.json', () => {
   const z = b => (L.zoneOf(b, Z) || {}).id || null;
-  assert.equal(z('A-001-01'), 'A1');
-  assert.equal(z('A-025-04-012'), 'A1');
-  assert.equal(z('A-026-01'), 'A2');
-  assert.equal(z('A-100-02'), 'A4');
-  assert.equal(z('A-183-02-029'), 'A7');
+  assert.equal(z('A-001-01'), 'A');
+  assert.equal(z('A-183-02-029'), 'A');
   assert.equal(z('B-003-02'), 'B');
   assert.equal(z('C - Warehouse'), 'C');
   assert.equal(z('D-020-04-048'), 'D');
-  assert.equal(z('1F-02-033'), '1F');
   assert.equal(z('NE-13'), 'NE');
+  for (const t of ['1A', '1B', '1C', '1D', '1E', '1F', '1G']) assert.equal(z(t + '-02-033'), 'TEAM');
+  assert.equal(z('TEAMWEAR'), 'TEAM');
+  assert.equal(z('1H-01-001'), 'OTHER');
   assert.equal(z('SNEAKERLAB'), 'OTHER');
   assert.equal(z('LEBRON'), 'OTHER');
   assert.equal(z('Sales Floor'), 'SF');
   assert.equal(L.zoneOf('Sales Floor', Z).lastResort, true);
-  assert.equal(z('RECEIVING'), null);
+  assert.equal(z('RECEIVING'), 'RECEIVING');
+  assert.equal(L.zoneOf('RECEIVING', Z).lastResort, true);
   assert.equal(z('QUAR'), null);
+  assert.equal(z('RECONCILIATION (WEB)'), null);
   assert.equal(z(''), null);
 });
 
+test('page order follows zones.json display, walk order follows the zone list', () => {
+  assert.deepEqual(Z.display.map(z => z.label),
+    ['Zone A', 'Zone B', 'Zone C', 'Zone D', 'NE', 'RECEIVING', 'Sales Floor Bin', 'Teamwear', 'Other']);
+  assert.deepEqual(Z.zones.map(z => z.id), ['A', 'B', 'C', 'D', 'NE', 'TEAM', 'OTHER', 'SF', 'RECEIVING']);
+  const Z2 = L.compileZones({ zones: [{ id: 'X' }, { id: 'Y' }], display: ['Y', 'nope'] });
+  assert.deepEqual(Z2.display.map(z => z.id), ['Y', 'X']);
+  assert.deepEqual(L.compileZones({ zones: [{ id: 'X' }, { id: 'Y' }] }).display.map(z => z.id), ['X', 'Y']);
+});
+
 test('walk order: zone order, then numeric parts', () => {
-  const bins = ['Sales Floor', 'D-001-01', 'A-100-01', 'A-002-01-010', 'NE-02', 'A-002-01-002', 'B-001-01', 'A-010-01', '1F-01-001', 'LEBRON'];
+  const bins = ['RECEIVING', 'Sales Floor', 'D-001-01', 'A-100-01', 'A-002-01-010', 'NE-02', 'A-002-01-002', 'B-001-01', 'A-010-01', '1F-01-001', 'LEBRON'];
   const sorted = bins.slice().sort((a, b) => (L.walkKey(a, Z) < L.walkKey(b, Z) ? -1 : 1));
-  assert.deepEqual(sorted, ['A-002-01-002', 'A-002-01-010', 'A-010-01', 'A-100-01', 'B-001-01', 'D-001-01', '1F-01-001', 'NE-02', 'LEBRON', 'Sales Floor']);
+  assert.deepEqual(sorted, ['A-002-01-002', 'A-002-01-010', 'A-010-01', 'A-100-01', 'B-001-01', 'D-001-01', 'NE-02', '1F-01-001', 'LEBRON', 'Sales Floor', 'RECEIVING']);
 });
 
 test('anchor zone keeps a multi-line order in one zone', () => {
@@ -110,8 +120,29 @@ test('Sales Floor bin is only a last resort, and flagged', () => {
 });
 
 test('excluded bins are never picked from', () => {
-  const p = pool([order('1', [['R', 1]])], { R: [['RECEIVING', 5]] });
+  const p = pool([order('1', [['R', 1]])], { R: [['QUAR', 5], ['RECONCILIATION (WEB)', 2]] });
   assert.equal(L.planOrders(p, null, Z).exceptions[0].reason, 'Short: R needs 1, 0 in bins');
+});
+
+test('RECEIVING is a last resort after the Sales Floor bin, and flagged with its own label', () => {
+  const p = pool([order('1', [['K1', 1]]), order('2', [['K2', 1]]), order('3', [['K3', 1]])],
+    { K1: [['RECEIVING', 25], ['A-087-01', 1]], K2: [['RECEIVING', 25], ['Sales Floor', 1]], K3: [['RECEIVING', 25]] });
+  const r = L.planOrders(p, null, Z);
+  assert.equal(r.exceptions.length, 0);
+  assert.deepEqual(binsOf(r.ready[0]), ['A-087-01×1']);
+  assert.equal(r.ready[0].lastResort, false);
+  assert.deepEqual(binsOf(r.ready[1]), ['Sales Floor×1']);
+  assert.deepEqual(binsOf(r.ready[2]), ['RECEIVING×1']);
+  assert.equal(r.ready[2].zone, 'RECEIVING');
+  assert.equal(r.ready[2].lastResort, true);
+  assert.equal(r.ready[2].stops[0].zoneLabel, 'RECEIVING');
+});
+
+test('pick path: A, B, C, D, NE, Teamwear, Other, Sales Floor, RECEIVING', () => {
+  const p = pool([order('1', [['P1', 1], ['P2', 1], ['P3', 1], ['P4', 1], ['P5', 1], ['P6', 1], ['P7', 1]])],
+    { P1: [['LEBRON', 1]], P2: [['1F-01-001', 1]], P3: [['NE-02', 1]], P4: [['D-001-01', 1]],
+      P5: [['C - Warehouse', 1]], P6: [['B-001-01', 1]], P7: [['A-001-01', 1]] });
+  assert.deepEqual(L.planOrders(p, null, Z).ready[0].stops.map(s => s.zone), ['A', 'B', 'C', 'D', 'NE', 'TEAM', 'OTHER']);
 });
 
 test('exceptions: not in NetSuite, on hold, pickup already ready; fulfilled orders are done', () => {
@@ -143,10 +174,10 @@ test('filter by zone/ship/units and sort express first then walk order', () => {
     order('d1', [['FAR', 2]]),
   ], bins), null, Z).ready;
 
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', sort: [{ key: 'express' }] }).map(o => o.no), ['e1', 's2', 's1']);
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { ship: ['standard'] } }).map(o => o.no), ['s2', 's1']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', sort: [{ key: 'express' }] }).map(o => o.no), ['e1', 's2', 's1']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', filters: { ship: ['standard'] } }).map(o => o.no), ['s2', 's1']);
   assert.deepEqual(L.selectWave(ready, { zone: 'D', filters: { units: ['2-3'] } }).map(o => o.no), ['d1']);
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', sort: [{ key: 'date', dir: 'desc' }], max: 2 }).map(o => o.no), ['e1', 's2']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', sort: [{ key: 'date', dir: 'desc' }], max: 2 }).map(o => o.no), ['e1', 's2']);
   assert.deepEqual(L.selectWave(ready, { filters: { sku: 'fa' } }).map(o => o.no), ['d1']);
 });
 
@@ -173,9 +204,9 @@ test('wave ids count up per Melbourne day', () => {
 
 test('buildWave: register has no customer data; slips carry route + addresses', () => {
   const ready = L.planOrders(pool([order('1', [['X', 2]])], { X: [['A-001-01', 1], ['A-003-01', 1]] }), null, Z).ready;
-  const { record, slips } = L.buildWave(ready, { id: 'W-260915-01', zone: 'A1', createdAt: '2026-09-15T03:00:00Z', Z });
+  const { record, slips } = L.buildWave(ready, { id: 'W-260915-01', zone: 'A', createdAt: '2026-09-15T03:00:00Z', Z });
   assert.deepEqual(record.orders, [{ no: '1', lines: [['X', 'A-001-01', 1], ['X', 'A-003-01', 1]] }]);
-  assert.equal(record.zoneLabel, 'A-001–025');
+  assert.equal(record.zoneLabel, 'Zone A');
   assert.equal(JSON.stringify(record).includes('Test'), false);
   assert.equal(slips.orders[0].seq, 1);
   assert.equal(slips.orders[0].shipTo.name, 'Test');
@@ -186,7 +217,7 @@ test('recheck drops shipped/fulfilled/edited orders and flags bins that no longe
   const orders = [order('1', [['X', 1]]), order('2', [['Y', 1]]), order('3', [['Z', 1]]), order('4', [['Q', 2]])];
   const bins = { X: [['A-001-01', 5]], Y: [['A-002-01', 5]], Z: [['A-003-01', 5]], Q: [['A-004-01', 2]] };
   const ready = L.planOrders(pool(orders, bins), null, Z).ready;
-  const { record, slips } = L.buildWave(ready, { id: 'W-1', zone: 'A1', createdAt: '2026-09-15T03:00:00Z', Z });
+  const { record, slips } = L.buildWave(ready, { id: 'W-1', zone: 'A', createdAt: '2026-09-15T03:00:00Z', Z });
   const index = { waves: [record] };
 
   const later = pool([
@@ -208,7 +239,7 @@ test('recheck drops shipped/fulfilled/edited orders and flags bins that no longe
 test('waveSummary states', () => {
   const now = '2026-09-18T03:00:00Z';
   const p = pool([order('1', [['X', 1]]), order('2', [['X', 1]], { ifDone: true })], {});
-  const w = (id, createdAt, nos, releasedAt) => ({ id, zone: 'A1', createdAt, units: nos.length, orders: nos.map(no => ({ no, lines: [] })), releasedAt: releasedAt || null });
+  const w = (id, createdAt, nos, releasedAt) => ({ id, zone: 'A', createdAt, units: nos.length, orders: nos.map(no => ({ no, lines: [] })), releasedAt: releasedAt || null });
   const s = L.waveSummary({ waves: [
     w('open', '2026-09-17T03:00:00Z', ['1', '2']),
     w('done', '2026-09-17T03:00:00Z', ['2', '9']),
@@ -250,15 +281,15 @@ test('customer filter narrows a wave to matching names', () => {
     order('2', [['X', 1]], { shipTo: { name: 'Mason Bosdorf' } }),
     order('3', [['X', 1]], { shipTo: { name: 'Chen Wei' } }),
   ], bins), null, Z).ready;
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: 'chen' } }).map(o => o.no), ['1', '3']);
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: 'yuhe' } }).map(o => o.no), ['1']);
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: '' } }).map(o => o.no), ['1', '2', '3']);
-  assert.deepEqual(L.selectWave(ready, { zone: 'A1', filters: { cust: 'nobody' } }), []);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', filters: { cust: 'chen' } }).map(o => o.no), ['1', '3']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', filters: { cust: 'yuhe' } }).map(o => o.no), ['1']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', filters: { cust: '' } }).map(o => o.no), ['1', '2', '3']);
+  assert.deepEqual(L.selectWave(ready, { zone: 'A', filters: { cust: 'nobody' } }), []);
 });
 
 test('wave name and picker: trimmed, capped, and still no customer data in the register', () => {
   const ready = L.planOrders(pool([order('1', [['X', 1]], { shipTo: { name: 'Yuhe Chen' } })], { X: [['A-001-01', 1]] }), null, Z).ready;
-  const base = { zone: 'A1', createdAt: '2026-09-16T03:00:00Z', Z };
+  const base = { zone: 'A', createdAt: '2026-09-16T03:00:00Z', Z };
   const { record, slips } = L.buildWave(ready, Object.assign({}, base, { id: 'W-260916-01', name: '  Morning   run  ', picker: '  Nick  ' }));
   assert.equal(record.name, 'Morning run');
   assert.equal(record.picker, 'Nick');
@@ -279,7 +310,7 @@ test('wave name and picker: trimmed, capped, and still no customer data in the r
 test('waveSummary carries name and picker, blank for waves saved before the feature', () => {
   const p = pool([order('1', [['X', 1]])], {});
   const s = L.waveSummary({ waves: [
-    { id: 'W-260916-01', name: 'Express first', picker: 'Nick', zone: 'A1', zoneLabel: 'A-001–025',
+    { id: 'W-260916-01', name: 'Express first', picker: 'Nick', zone: 'A', zoneLabel: 'Zone A',
       createdAt: '2026-09-16T03:00:00Z', units: 1, orders: [{ no: '1', lines: [] }], releasedAt: null },
     { id: 'W-260916-02', zone: 'A2', createdAt: '2026-09-16T03:00:00Z', units: 1,
       orders: [{ no: '1', lines: [] }], releasedAt: null },
@@ -289,7 +320,7 @@ test('waveSummary carries name and picker, blank for waves saved before the feat
 
 test('waveSummary reports archived waves, and the public seed leaves them out', () => {
   const p = pool([order('1', [['X', 1]])], {});
-  const w = (id, archivedAt) => ({ id, zone: 'A1', createdAt: '2026-09-16T03:00:00Z', units: 1,
+  const w = (id, archivedAt) => ({ id, zone: 'A', createdAt: '2026-09-16T03:00:00Z', units: 1,
     orders: [{ no: '1', lines: [] }], releasedAt: '2026-09-16T03:30:00Z', archivedAt: archivedAt || null });
   const s = L.waveSummary({ waves: [w('W-1'), w('W-2', '2026-09-16T04:00:00Z')] }, p, '2026-09-16T05:00:00Z');
   assert.deepEqual(s.map(x => [x.id, x.archived]), [['W-1', false], ['W-2', true]]);
@@ -340,7 +371,7 @@ test('customer query: comma-separated include, and "-" to exclude', () => {
     order('3', [['X', 1]], { shipTo: { name: 'Anna Chen' } }),
     order('4', [['X', 1]], { shipTo: { name: 'Jake Morrison' } }),
   ], bins), null, Z).ready;
-  const pickNos = cust => L.selectWave(ready, { zone: 'A1', filters: { cust } }).map(o => o.no);
+  const pickNos = cust => L.selectWave(ready, { zone: 'A', filters: { cust } }).map(o => o.no);
 
   // include: either name, and both Jakes come along
   assert.deepEqual(pickNos('Jake, Yuhe'), ['1', '2', '4']);
@@ -371,7 +402,7 @@ test('waveDetail labels every order, and recheck is the same answer filtered', (
   const orders = [order('1', [['X', 1]]), order('2', [['Y', 1]]), order('3', [['Z', 1]]), order('4', [['Q', 2]])];
   const bins = { X: [['A-001-01', 5]], Y: [['A-002-01', 5]], Z: [['A-003-01', 5]], Q: [['A-004-01', 2]] };
   const ready = L.planOrders(pool(orders, bins), null, Z).ready;
-  const { record, slips } = L.buildWave(ready, { id: 'W-1', zone: 'A1', createdAt: '2026-09-15T03:00:00Z', Z });
+  const { record, slips } = L.buildWave(ready, { id: 'W-1', zone: 'A', createdAt: '2026-09-15T03:00:00Z', Z });
   const index = { waves: [record] };
 
   const later = pool([
@@ -404,7 +435,7 @@ test('waveDetail: an order that has left Shopify is gone, not changed', () => {
   const orders = [order('1', [['X', 1]])];
   const bins = { X: [['A-001-01', 5]] };
   const ready = L.planOrders(pool(orders, bins), null, Z).ready;
-  const { slips } = L.buildWave(ready, { id: 'W-2', zone: 'A1', createdAt: '2026-09-15T03:00:00Z', Z });
+  const { slips } = L.buildWave(ready, { id: 'W-2', zone: 'A', createdAt: '2026-09-15T03:00:00Z', Z });
   const d = L.waveDetail(slips, pool([], bins), { waves: [] });
   assert.deepEqual(d.orders.map(o => o.status), ['gone']);
   assert.match(d.orders[0].reason, /No longer open in Shopify/);

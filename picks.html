@@ -306,7 +306,7 @@ table.t .b{font-weight:600}
     <section class="stats" id="stats"></section>
     <section class="cols">
       <div class="panel">
-        <div class="ph"><h2>Ready to pick</h2><span class="meta">by zone · walk order</span></div>
+        <div class="ph"><h2>Ready to pick</h2><span class="meta">by zone</span></div>
         <div id="zones"></div>
       </div>
       <div class="panel">
@@ -881,7 +881,7 @@ function renderZones() {
     by.set(o.zone, z);
   }
   const head = `<div class="zrow zhead"><div>Zone</div><div>Orders</div><div class="zu">Units</div><div class="ze">Express</div><div class="zo">Oldest</div><div></div></div>`;
-  const rows = S.Z.zones.map(z => {
+  const rows = S.Z.display.map(z => {
     const d = by.get(z.id);
     if (!d) return `<div class="zrow empty"><div class="zl">${esc(z.label)}</div><div class="zn">0</div><div class="zu"></div><div class="ze"></div><div class="zo"></div><div></div></div>`;
     return `<div class="zrow"><div class="zl">${esc(z.label)}</div><div class="zn">${fmtN(d.n)}</div>
@@ -980,9 +980,9 @@ const CHIP_SETS = {
 
 function openBuilder(zone) {
   if (S.builder) closeBuilder();
-  const first = S.Z.zones.find(z => S.plan.ready.some(o => o.zone === z.id));
+  const first = S.Z.display.find(z => S.plan.ready.some(o => o.zone === z.id));
   const B = {
-    zone: zone || (first ? first.id : S.Z.zones[0].id),
+    zone: zone || (first ? first.id : S.Z.display[0].id),
     name: '', picker: '',
     filters: { ship: [], cls: [], units: [], states: [], dateTo: '', sku: '', cust: '' },
     sort: [{ key: 'stop', dir: 'asc' }, { key: '', dir: 'asc' }, { key: '', dir: 'asc' }],
@@ -1009,7 +1009,7 @@ function openBuilder(zone) {
             ${pickers.length ? `<datalist id="b-pickers">${pickers.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>` : ''}</div></div>
         <div class="hint">Both are optional, both show on the public dashboard — no customer names.</div>
         <div class="f"><label class="fl" for="b-zone">Zone</label>
-          <select id="b-zone"><option value="${PickLib.ALL}"${B.zone === PickLib.ALL ? ' selected' : ''}>All zones — ${S.plan.ready.length} ready</option>${S.Z.zones.map(z => `<option value="${esc(z.id)}"${z.id === B.zone ? ' selected' : ''}>${esc(z.label)} — ${counts.get(z.id) || 0} ready</option>`).join('')}</select></div>
+          <select id="b-zone"><option value="${PickLib.ALL}"${B.zone === PickLib.ALL ? ' selected' : ''}>All zones — ${S.plan.ready.length} ready</option>${S.Z.display.map(z => `<option value="${esc(z.id)}"${z.id === B.zone ? ' selected' : ''}>${esc(z.label)} — ${counts.get(z.id) || 0} ready</option>`).join('')}</select></div>
         <div class="f"><label class="fl" for="b-date">Ordered up to</label><input type="datetime-local" id="b-date"><div class="hint">Blank = every open order</div></div>
         <div class="f"><span class="fl">Delivery</span><div class="chips">${chips('ship', CHIP_SETS.ship)}</div></div>
         <div class="f"><span class="fl">Class</span><div class="chips">${chips('cls', CHIP_SETS.cls)}</div></div>
@@ -1169,7 +1169,8 @@ function updatePreview(B) {
   const list = PickLib.selectWave(S.plan.ready, opts);
   const units = list.reduce((n, o) => n + o.units, 0);
   const cont = list.filter(o => o.zones.length > 1).length;
-  const sf = list.filter(o => o.lastResort).length;
+  const lr = new Map();                      // last-resort zone label → orders using it
+  for (const o of list) for (const l of new Set(o.stops.filter(s => s.lastResort).map(s => s.zoneLabel))) lr.set(l, (lr.get(l) || 0) + 1);
   const exp = list.filter(o => o.type === 'express').length;
   const pick = list.filter(o => o.type === 'pickup').length;
   const k = (t, warn) => `<span class="k${warn ? ' warn' : ''}">${t}</span>`;
@@ -1178,13 +1179,13 @@ function updatePreview(B) {
     (all.length > list.length ? k(`${all.length - list.length} more match — max ${opts.max}`, true) : '') +
     (exp ? k(`${exp} express`) : '') + (pick ? k(`${pick} pickup`) : '') +
     (cont ? k(`${plural(cont, 'order')} continue to another zone`, true) : '') +
-    (sf ? k(`${sf} use the Sales Floor bin`, true) : '');
+    [...lr].map(([l, n]) => k(`${n} use ${l}`, true)).join('');
   B.el.querySelector('#b-list').innerHTML = list.length
     ? `<table class="t"><thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Type</th><th>First bin</th><th>Route</th><th class="r">Units</th><th>Ordered</th><th>State</th></tr></thead><tbody>` +
       list.map((o, i) => `<tr><td class="mono dim">${i + 1}</td><td class="mono b">#${esc(o.no)}</td>
         <td>${esc(PickLib.custName(o) || '—')}</td><td>${typePill(o.type)}</td>
         <td class="mono">${esc(o.stops[0].bin)}</td>
-        <td>${plural(o.stops.length, 'stop')}${o.zones.length > 1 ? ` <span class="cont">→ ${esc(o.zones.slice(1).map(zoneLabel).join(', '))}</span>` : ''}${o.lastResort ? '<span class="flag">SF BIN</span>' : ''}</td>
+        <td>${plural(o.stops.length, 'stop')}${o.zones.length > 1 ? ` <span class="cont">→ ${esc(o.zones.slice(1).map(zoneLabel).join(', '))}</span>` : ''}${[...new Set(o.stops.filter(s => s.lastResort).map(s => s.zoneLabel))].map(l => `<span class="flag">${esc(l.toUpperCase())}</span>`).join('')}</td>
         <td class="mono r">${o.units}</td><td class="mono dim" title="${esc(melDay(o.at) + ' ' + melTime(o.at))}">${age(o.at)}</td><td class="mono dim">${esc(o.state || '—')}</td></tr>`).join('') +
       '</tbody></table>'
     : `<div class="pv-empty">No ready orders in ${esc(zoneLabel(opts.zone))} match these settings.</div>`;

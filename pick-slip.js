@@ -246,7 +246,7 @@
     txt(doc, s.bin, COL.bin, y + 10.5, bz, 'bold', INK);
     let ty = y + 15.5;
     if (s.backup) { txt(doc, fit(doc, 'backup  ' + s.backup, binW, 7.5, 'normal'), COL.bin, ty, 7.5, 'normal', MID); ty += 2; }
-    if (s.lastResort) { tag(doc, 'SALES FLOOR BIN', COL.bin, ty); ty += 5.2; }
+    if (s.lastResort) { tag(doc, String(s.zoneLabel || 'Sales Floor Bin').toUpperCase(), COL.bin, ty); ty += 5.2; }
     if (s.check) tag(doc, 'CHECK BIN — STOCK MOVED', COL.bin, ty);
 
     const skuW = COL.size - COL.sku - 4;
