@@ -274,13 +274,18 @@
     return inc.length ? hits(inc) : true;                 // only exclusions → keep the rest
   }
 
+  // dayFrom / dayTo are Melbourne calendar days 'YYYY-MM-DD', both inclusive (one day = same value
+  // in both). dateTo (an ISO instant, "ordered up to") is the older filter, still honoured.
   function filterOrders(ready, f) {
     f = f || {};
     const to = f.dateTo ? Date.parse(f.dateTo) : null;
+    const dFrom = f.dayFrom || '', dTo = f.dayTo || '';
+    const day = o => melDay(new Date(o.at));
     const sku = f.sku ? String(f.sku).trim().toUpperCase() : '';
     return ready.filter(o =>
       (!f.zone || f.zone === ALL || o.zone === f.zone) &&
       (to === null || Date.parse(o.at) <= to) &&
+      (!dFrom || day(o) >= dFrom) && (!dTo || day(o) <= dTo) &&
       has(f.ship, o.type) &&
       has(f.states, o.state || '') &&
       has(f.cls, o.cls) &&
@@ -298,10 +303,15 @@
     sku:     o => o.firstSku || '',
     class:   o => o.cls || '',
     qty:     o => o.units,
+    order:   o => parseInt(String(o.no).replace(/\D/g, ''), 10) || 0,
+    cust:    o => fold(custName(o)) || '~',
+    type:    o => ({ express: 0, standard: 1, pickup: 2 }[o.type] ?? 3),
+    stops:   o => (o.stops || []).length,
   };
   const SORT_LABELS = {
-    stop: 'First bin (walk order)', date: 'Order date', express: 'Express first', pickup: 'Pickups first',
-    state: 'State', sku: 'SKU', class: 'Class', qty: 'Units',
+    stop: 'First bin (walk order)', date: 'Order date', order: 'Order number', cust: 'Customer',
+    type: 'Delivery type', express: 'Express first', pickup: 'Pickups first',
+    state: 'State', sku: 'SKU', class: 'Class', qty: 'Units', stops: 'Number of stops',
   };
 
   function sortOrders(list, keys) {

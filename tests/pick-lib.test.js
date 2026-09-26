@@ -441,3 +441,34 @@ test('waveDetail: an order that has left Shopify is gone, not changed', () => {
   assert.match(d.orders[0].reason, /No longer open in Shopify/);
   assert.equal(d.counts.gone, 1);
 });
+
+test('order-date filter: one Melbourne day, or an inclusive range', () => {
+  // 14:30Z on the 15th = 00:30 on the 16th in Melbourne → counts as the 16th
+  const mk = (no, at) => Object.assign(order(no, [['D', 1]]), { at });
+  const p = pool([mk('1', '2026-09-14T03:00:00Z'), mk('2', '2026-09-15T13:59:00Z'), mk('3', '2026-09-15T14:30:00Z'), mk('4', '2026-09-17T01:00:00Z')],
+    { D: [['A-001-01', 9]] });
+  const ready = L.planOrders(p, null, Z).ready;
+  const nos = f => L.filterOrders(ready, f).map(o => o.no).sort();
+  assert.deepEqual(nos({ dayFrom: '2026-09-15', dayTo: '2026-09-15' }), ['2']);
+  assert.deepEqual(nos({ dayFrom: '2026-09-16', dayTo: '2026-09-16' }), ['3']);
+  assert.deepEqual(nos({ dayFrom: '2026-09-15', dayTo: '2026-09-16' }), ['2', '3']);
+  assert.deepEqual(nos({ dayFrom: '2026-09-16' }), ['3', '4']);
+  assert.deepEqual(nos({ dayTo: '2026-09-15' }), ['1', '2']);
+  assert.deepEqual(nos({}), ['1', '2', '3', '4']);
+});
+
+test('new sort keys: order number, customer, delivery type, stops', () => {
+  const p = pool([
+    order('100', [['S', 1]], { type: 'pickup', shipTo: { name: 'Zed' } }),
+    order('9', [['S', 1], ['T', 1]], { type: 'express', shipTo: { name: 'amy' } }),
+    order('55', [['S', 1]], { type: 'standard', shipTo: { name: 'Émile' } }),
+  ], { S: [['A-001-01', 9]], T: [['B-001-01', 9]] });
+  const ready = L.planOrders(p, null, Z).ready;
+  const by = (key, dir) => L.sortOrders(ready, [{ key, dir }]).map(o => o.no);
+  assert.deepEqual(by('order'), ['9', '55', '100']);
+  assert.deepEqual(by('order', 'desc'), ['100', '55', '9']);
+  assert.deepEqual(by('cust'), ['9', '55', '100']);            // amy, Émile, Zed — accent- and case-blind
+  assert.deepEqual(by('type'), ['9', '55', '100']);            // express, standard, pickup
+  assert.deepEqual(by('stops', 'desc')[0], '9');
+  for (const k of ['order', 'cust', 'type', 'stops']) assert.ok(L.SORT_LABELS[k]);
+});

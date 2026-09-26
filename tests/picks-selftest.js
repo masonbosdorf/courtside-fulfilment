@@ -23,7 +23,42 @@
     const sum = document.getElementById('b-sum');
     ok('builder preview renders', sum && /\d+ orders?/.test(sum.textContent), sum && sum.textContent.trim());
     const rows = document.querySelectorAll('#b-list tbody tr').length;
-    ok('preview lists the capped selection', rows === Math.min(zoneOrders.length, 40), `${rows} rows`);
+    ok('preview lists every order in the zone (no default max)', rows === zoneOrders.length, `${rows} rows`);
+    ok('max orders starts blank', document.getElementById('b-max').value === '');
+    ok('five slip-order levels', document.querySelectorAll('select[data-sort]').length === 5);
+
+    // clickable headers drive the slip order: click = asc, click again = desc, dropdown follows
+    const col = key => [...document.querySelectorAll('#b-list tbody tr')].map(tr => tr.children[key].textContent.trim());
+    const click = k => { document.querySelector(`#b-list th[data-sortkey="${k}"]`).click(); return new Promise(r => setTimeout(r, 20)); };
+    const num = a => a.map(x => parseInt(x.replace(/\D/g, ''), 10));
+    await click('order');
+    let nos = num(col(1));
+    ok('Order header sorts ascending', nos.every((n, i) => !i || nos[i - 1] <= n), nos.slice(0, 5).join(','));
+    ok('sort level 1 dropdown follows the header', document.querySelector('select[data-sort="0"]').value === 'order');
+    await click('order');
+    nos = num(col(1));
+    ok('second click flips to descending', nos.every((n, i) => !i || nos[i - 1] >= n) && document.querySelector('[data-dir="0"]').textContent === 'Desc', nos.slice(0, 5).join(','));
+    await click('qty');
+    const u = num(col(6));
+    ok('Units header sorts ascending', u.every((n, i) => !i || u[i - 1] <= n));
+    ok('previous header drops to level 2', document.querySelector('select[data-sort="1"]').value === 'order');
+    const wantOrder = L.selectWave(S.plan.ready, A.builderOpts(S.builder)).map(o => o.no);
+    ok('preview order is the slip order', JSON.stringify(num(col(1)).map(String)) === JSON.stringify(wantOrder));
+    ok('order date shown as a date', /\d{2}:\d{2}/.test(col(7)[0] || ''), col(7)[0]);
+
+    // order-date filter: one day and range
+    const days = [...new Set(S.plan.ready.filter(o => o.zone === zone).map(o => L.melDayKey ? L.melDayKey(o.at) : new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(new Date(o.at))))].sort();
+    const d0 = days[0];
+    document.querySelector('[data-daymode="day"]').click();
+    const inp = document.getElementById('b-dfrom'); inp.value = d0; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 20));
+    const oneDay = zoneOrders.filter(n => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(new Date(S.pool.orders.find(o => o.no === n).at)) === d0).length;
+    ok('One day shows only that day', document.querySelectorAll('#b-list tbody tr').length === oneDay, `${d0}: ${oneDay}`);
+    document.querySelector('[data-daymode="range"]').click();
+    const to = document.getElementById('b-dto'); to.value = days[days.length - 1]; to.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 20));
+    ok('Range covering every day shows everything', document.querySelectorAll('#b-list tbody tr').length === zoneOrders.length, `${d0} → ${days[days.length - 1]}`);
+    document.querySelector('[data-daymode="any"]').click();
     A.closeBuilder();
 
     // two waves back to back in the same zone
