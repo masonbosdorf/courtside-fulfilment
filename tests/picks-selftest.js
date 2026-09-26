@@ -39,12 +39,15 @@
     nos = num(col(1));
     ok('second click flips to descending', nos.every((n, i) => !i || nos[i - 1] >= n) && document.querySelector('[data-dir="0"]').textContent === 'Desc', nos.slice(0, 5).join(','));
     await click('qty');
-    const u = num(col(6));
+    const u = num(col(5));
     ok('Units header sorts ascending', u.every((n, i) => !i || u[i - 1] <= n));
     ok('previous header drops to level 2', document.querySelector('select[data-sort="1"]').value === 'order');
     const wantOrder = L.selectWave(S.plan.ready, A.builderOpts(S.builder)).map(o => o.no);
     ok('preview order is the slip order', JSON.stringify(num(col(1)).map(String)) === JSON.stringify(wantOrder));
-    ok('order date shown as a date', /\d{2}:\d{2}/.test(col(7)[0] || ''), col(7)[0]);
+    ok('order date shown short (24 SEP)', /^\d{2} [A-Z]{3}$/.test(col(6)[0] || ''), col(6)[0]);
+    ok('no route / stops column', !document.querySelector('#b-list th[data-sortkey="stops"]') && document.querySelectorAll('#b-list thead th').length === 8);
+    const pv = document.getElementById('b-list');
+    ok('preview never scrolls sideways', pv.scrollWidth <= pv.clientWidth + 1, `${pv.scrollWidth} / ${pv.clientWidth}`);
 
     // order-date filter: one day and range
     const days = [...new Set(S.plan.ready.filter(o => o.zone === zone).map(o => L.melDayKey ? L.melDayKey(o.at) : new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(new Date(o.at))))].sort();

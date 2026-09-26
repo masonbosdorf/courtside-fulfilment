@@ -194,6 +194,16 @@ table.t.sortable th[data-sortkey]{cursor:pointer;user-select:none}
 table.t.sortable th[data-sortkey]:hover{color:var(--ink)}
 table.t.sortable th.on{color:var(--ink)}
 table.t.sortable th .arr{display:inline-block;width:1em;margin-left:4px;font-size:9px}
+table.pv{table-layout:fixed}
+table.pv th,table.pv td{padding:9px 10px;white-space:nowrap;vertical-align:middle}
+table.pv th{vertical-align:bottom}
+table.pv col.c-n{width:44px} table.pv col.c-no{width:86px} table.pv col.c-ty{width:108px}
+table.pv col.c-bin{width:156px} table.pv col.c-u{width:72px} table.pv col.c-d{width:84px} table.pv col.c-st{width:70px}
+table.pv .ell{overflow:hidden;text-overflow:ellipsis}
+table.pv .bin{overflow:hidden;text-overflow:ellipsis}
+table.pv .bin .sub{display:flex;gap:4px;align-items:center;margin-top:2px;overflow:hidden}
+table.pv .bin .sub .flag{margin-left:0}
+table.pv td.r,table.pv th.r{text-align:right}
 .cont{font-family:var(--mono);font-size:11px;color:var(--watch)}
 .flag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--late);border:1px solid var(--late-soft);border-radius:4px;padding:0 4px;margin-left:4px}
 
@@ -219,7 +229,7 @@ table.t.sortable th .arr{display:inline-block;width:1em;margin-left:4px;font-siz
 .pv-sum .big{font-family:var(--display);font-size:26px;letter-spacing:-.02em}
 .pv-sum .k{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
 .pv-sum .k.warn{color:var(--watch)}
-.pv-table{overflow:auto;min-height:0}
+.pv-table{overflow-y:auto;overflow-x:hidden;min-height:0}
 .pv-empty{padding:40px 20px;color:var(--ink-3);text-align:center}
 .mf{display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--line)}
 .mf .sp{flex:1}
@@ -363,6 +373,11 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch (e) { /* private mode */ } },
 };
 const melTime = iso => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const shortDay = iso => {                       // "24 SEP" in Melbourne time (ICU says "Sept", so build it)
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso)).split('-');
+  return `${d} ${MON[Number(m) - 1]}`;
+};
 const melDay = iso => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
 const ago = iso => {
   const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
@@ -1242,14 +1257,26 @@ function updatePreview(B) {
     (cont ? k(`${plural(cont, 'order')} continue to another zone`, true) : '') +
     [...lr].map(([l, n]) => k(`${n} use ${l}`, true)).join('');
   B.el.querySelector('#b-list').innerHTML = list.length
-    ? `<table class="t sortable"><thead><tr><th>#</th>${[['order', 'Order'], ['cust', 'Customer'], ['type', 'Type'], ['stop', 'First bin'], ['stops', 'Route'], ['qty', 'Units', 'r'], ['date', 'Ordered'], ['state', 'State']]
+    ? `<table class="t sortable pv"><colgroup><col class="c-n"><col class="c-no"><col><col class="c-ty"><col class="c-bin"><col class="c-u"><col class="c-d"><col class="c-st"></colgroup>
+        <thead><tr><th>#</th>${[['order', 'Order'], ['cust', 'Customer'], ['type', 'Type'], ['stop', 'First bin'], ['qty', 'Units', 'r'], ['date', 'Ordered'], ['state', 'State']]
         .map(([key, label, cls]) => { const on = opts.sort[0] && opts.sort[0].key === key ? opts.sort[0].dir : '';
           return `<th data-sortkey="${key}" class="${cls || ''}${on ? ' on' : ''}" title="Sort by ${esc(label.toLowerCase())}" aria-sort="${on === 'asc' ? 'ascending' : on === 'desc' ? 'descending' : 'none'}">${label}<span class="arr">${on === 'asc' ? '▲' : on === 'desc' ? '▼' : ''}</span></th>`; }).join('')}</tr></thead><tbody>` +
-      list.map((o, i) => `<tr><td class="mono dim">${i + 1}</td><td class="mono b">#${esc(o.no)}</td>
-        <td>${esc(PickLib.custName(o) || '—')}</td><td>${typePill(o.type)}</td>
-        <td class="mono">${esc(o.stops[0].bin)}</td>
-        <td>${plural(o.stops.length, 'stop')}${o.zones.length > 1 ? ` <span class="cont">→ ${esc(o.zones.slice(1).map(zoneLabel).join(', '))}</span>` : ''}${[...new Set(o.stops.filter(s => s.lastResort).map(s => s.zoneLabel))].map(l => `<span class="flag">${esc(l.toUpperCase())}</span>`).join('')}</td>
-        <td class="mono r">${o.units}</td><td class="mono dim nowrap" title="${esc(age(o.at))} ago">${esc(melDay(o.at))} ${esc(melTime(o.at))}</td><td class="mono dim">${esc(o.state || '—')}</td></tr>`).join('') +
+      list.map((o, i) => {
+        const cust = PickLib.custName(o) || '—';
+        // each extra zone shows once: normal zones as "→ Zone", last-resort zones as a flag —
+        // and no flag when the first bin already IS that last-resort bin (e.g. RECEIVING)
+        const isLR = id => (S.Z.byId.get(id) || {}).lastResort;
+        const more = o.zones.slice(1).filter(id => !isLR(id));
+        const lrs = [...new Set(o.stops.filter(s => s.lastResort && s.zone !== o.zones[0]).map(s => s.zoneLabel))];
+        const sub = (more.length ? `<span class="cont">→ ${esc(more.map(zoneLabel).join(', '))}</span>` : '') +
+          lrs.map(l => `<span class="flag">${esc(l.toUpperCase())}</span>`).join('');
+        return `<tr><td class="mono dim">${i + 1}</td><td class="mono b">#${esc(o.no)}</td>
+        <td class="ell" title="${esc(cust)}">${esc(cust)}</td><td>${typePill(o.type)}</td>
+        <td class="mono bin" title="${esc(plural(o.stops.length, 'stop') + ': ' + o.stops.map(s => s.bin).join(', '))}">${esc(o.stops[0].bin)}${sub ? `<div class="sub">${sub}</div>` : ''}</td>
+        <td class="mono r">${o.units}</td>
+        <td class="mono dim" title="${esc(melDay(o.at) + ' ' + melTime(o.at) + ' · ' + age(o.at) + ' ago')}">${esc(shortDay(o.at))}</td>
+        <td class="mono dim">${esc(o.state || '—')}</td></tr>`;
+      }).join('') +
       '</tbody></table>'
     : `<div class="pv-empty">No ready orders in ${esc(zoneLabel(opts.zone))} match these settings.</div>`;
   B.el.querySelector('#b-save').disabled = !list.length;
